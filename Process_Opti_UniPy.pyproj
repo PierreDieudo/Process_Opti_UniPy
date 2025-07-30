@@ -30,6 +30,7 @@
     <Compile Include="Costing.py" />
     <Compile Include="Ferrari_paper_opti.py" />
     <Compile Include="Hub.py" />
+    <Compile Include="Costing_General.py" />
     <Compile Include="Opti_Module.py" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />

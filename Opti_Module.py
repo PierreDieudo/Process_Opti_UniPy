@@ -5,6 +5,7 @@ from Ferrari_paper_opti import Ferrari_Paper_Main
 import pandas as pd  
 import tqdm
 import os
+import time
 
 """
 This module is used to run the optimisation for the process simulation, would it be by brute force or using an optimisation algorithm.
@@ -22,24 +23,29 @@ Most debugging and test messages are removed from this solution ; manual checks 
 #-------------------------------#
 #--- Optimisation Parameters ---#
 #-------------------------------#
+Method = "Optimisation" # Method is either by Brute_Force or Optimisation
 
-# Generate brute force parameters using NumPy for better performance
 
-
+# Generate brute force parameters
 Opti_Param = {
     "Recycling_Ratio" : [0, 1],  # Recycling ratio range for the process
     "Q_A_ratio_2" : [1, 10], # Flow/Area ratio for the second stage
-    #"P_up_2" : [3, 10]  # Upper pressure range for the second stage in bar    
+    #"P_up_2" : [3, 10],  # Upper pressure range for the second stage in bar    
+    #"Q_A_ratio_1" : [0.5, 2], # Flow/Area ratio for the first stage"
+    #"P_up_1" : [3, 10],  # Upper pressure range for the first stage in bar"
     }
 
+
 # In case of brute force
-number_evaluation = 100  # Number of evaluations for the brute force method
+number_evaluation = 200  # Number of evaluations for the brute force method
 
 Brute_Force_Param = [  
    {  
        "Recycling_Ratio": np.random.uniform(*Opti_Param["Recycling_Ratio"]),  
        "Q_A_ratio_2": np.random.uniform(*Opti_Param["Q_A_ratio_2"]),  
-       #"P_up_2": np.random.uniform(*Opti_Param["P_up_2"])  
+       #"P_up_2": np.random.uniform(*Opti_Param["P_up_2"]),
+       #"Q_A_ratio_1": np.random.uniform(*Opti_Param["Q_A_ratio_1"]),
+       #"P_up_1": np.random.uniform(*Opti_Param["P_up_1"]),
    }  
    for _ in range(number_evaluation)  
 ]
@@ -76,9 +82,10 @@ Process_param = {
 "Target_Recovery" : 0.9, # Target recovery from Membrane 2 - for now not a hard limit, but a target to be achieved
 "Replacement_rate": 4, # Replacement rate of the membranes (in yr)
 "Operating_hours": 8000, # Operating hours per year
-"Lifetime": 20, # Lifetime of the membranes (in yr)
+"Lifetime": 20, # Lifetime of the plant (in yr)
+"Base Plant Cost": 149.8 * 1e6, # Total direct cost of plant (no CCS) in 2014 money
+"Contingency": 0.3, # or 0.4 (30% or 40% contingency for process design - based on TRL)
 }
-    
 
 Component_properties = {
 "Viscosity_param": ([0.0479,0.6112],[0.0466,3.8874],[0.0558,3.8970], [0.03333, -0.23498]), # Viscosity parameters for each component: slope and intercept for the viscosity correlation wiht temperature (in K) - from NIST
@@ -92,103 +99,196 @@ Fibre_Dimensions = {
   
 J = len(Membrane_1["Permeance"]) #number of components
 
+#-------------------------------#
+#----- Optimisation Method -----#
+#-------------------------------#
 
-# Define the columns based on the parameters being changed and all variables in the Economics dictionary  
-columns = [  
-  f'Param_{j+1}' for j in range(len(Brute_Force_Param[0]))
-] + [  
-  "Evaluation",  # Evaluation metric  
-  "Purity",  # Purity of the product  
-  "Recovery",  # Recovery of the product  
-  "TAC_CC",  # Total Annualised Cost of Carbon Capture  
-  "Capex_tot",  # Total Capital Expenditure in 2014 money  
-  "Opex_tot",  # Total Operational Expenditure per year  
-  "Variable_Opex",  # Variable Operational Expenditure per year  
-  "Fixed_Opex",  # Fixed Operational Expenditure per year  
-  "TAC_Cryo",  # Total Annualised Cost of Cryogenic cooling  
-  "CO2_emission",  # CO2 emissions from the process in tonnes per year  
-  "C_compressor",  # Capital cost of compressors  
-  "C_cooler",  # Capital cost of coolers  
-  "C_membrane",  # Capital cost of membranes  
-  "C_expander",  # Capital cost of expanders  
-  "O_compressor",  # Operational cost of compressors per year  
-  "O_cooler",  # Operational cost of coolers per year  
-  "O_membrane",  # Operational cost of membranes per year  
-  "O_expander",  # Operational cost of expanders per year  
-  "O_heater",  # Operational cost of heat integration from retentate per year  
-  "Penalty_purity",  # Penalty for purity under target  
-  "Penalty_CO2_emission",  # Penalty for CO2 emissions under target  
-]
-# Preallocate for the range of data sets
-df = pd.DataFrame(index=range(number_evaluation), columns=columns)
 
-for i in tqdm.tqdm(range(number_evaluation)):
-    Process_param["Recycling_Ratio"] = Brute_Force_Param[i]["Recycling_Ratio"]
-    Membrane_2["Q_A_ratio"] = Brute_Force_Param[i]["Q_A_ratio_2"]
-    #Membrane_2["Pressure_Feed"] = Brute_Force_Param[i]["P_up_2"]
+def Opti_algorithm():
+    
+    # Define the bounds for the parameters to be optimised
+    bounds = [  
+        Opti_Param["Recycling_Ratio"],  # Recycling ratio range for the process
+        Opti_Param["Q_A_ratio_2"],  # Flow/Area ratio for the second stage
+        #Opti_Param["P_up_2"],  # Upper pressure range for the second stage in bar    
+        #Opti_Param["Q_A_ratio_1"],  # Flow/Area ratio for the first stage"
+        #Opti_Param["P_up_1"],  # Upper pressure range for the first stage in bar"
+    ]
+    
+    # Define the objective function to be minimised
+    def objective_function(params):
+        Process_param["Recycling_Ratio"] = params[0]
+        Membrane_2["Q_A_ratio"] = params[1]
+        #Membrane_2["Pressure_Feed"] = params[2]
+        #Membrane_1["Q_A_ratio"] = params[3]
+        #Membrane_1["Pressure_Feed"] = params[4]
+        Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
+        Economics = Ferrari_Paper_Main(Parameters)
+        if isinstance(Economics, dict):
+            return Economics['Evaluation']  # Return the evaluation metric to be minimised
+        else:
+            return 5e8  # If simulation fails, return a large number to avoid this solution
 
-    Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
+
+    # Callback function to track progress
+    def callback(xk, convergence):
+        print(f"Iteration: {callback.n_iter}, Best solution: {xk}, Convergence: {convergence:.4f}")
+        callback.n_iter += 1
+    
+    callback.n_iter = 1
+
+
+    def save_results(results, filename):
+        with open(filename, 'w') as f:
+            f.write("Best Parameters: {}\n".format(results.x))
+            f.write("Objective Value: {}\n".format(results.fun))
+            f.write("Iterations: {}\n".format(results.nit))
+            f.write("Convergence Message: {}\n".format(results.message))
 
     # Run the optimisation algorithm
-    Economics = Ferrari_Paper_Main(Parameters)
-
-    if isinstance(Economics, dict):
-        df.loc[i] = list(Brute_Force_Param[i].values()) + list(Economics.values())
-    else:
-        df.loc[i] = list(Brute_Force_Param[i].values()) + [Economics] + [0] * (len(columns) - len(Brute_Force_Param[i]) - 1)
-
-
-
-desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
-
-# Define the file path
-file_path = os.path.join(desktop_path, 'example.csv')
-
-# Save the DataFrame to a CSV file  
-df.to_csv("optimisation_results.csv", index=False)
-
-
-
-# ================================================
-# ====== 3D SCATTER PLOTS OF RESULTS  ============
-# ================================================
-import matplotlib.pyplot as plt
-
-# Choose variables to plot
-econ_vars = ["Evaluation", "Purity", "Recovery", "TAC_CC"]
-
-# Ensure the parameter columns exist
-if "Param_1" not in df.columns or "Param_2" not in df.columns:
-    # If columns are unnamed (dict order), rename appropriately
-    df.rename(columns={df.columns[0]: "Param_1", df.columns[1]: "Param_2"}, inplace=True)
-
-# Create 2x2 grid of 3D scatter plots
-fig = plt.figure(figsize=(16, 12))
-for i, var in enumerate(econ_vars, start=1):
-    ax = fig.add_subplot(2, 2, i, projection='3d')
-    sc = ax.scatter(
-        df["Param_1"],
-        df["Param_2"],
-        df[var],
-        c=df[var],
-        cmap='viridis',
-        s=30,
-        alpha=0.8
+    result = differential_evolution(
+        objective_function,
+        bounds,
+        maxiter=100,  
+        popsize=20 * len(bounds),   
+        callback=callback
     )
-    ax.set_xlabel("Param_0")
-    ax.set_ylabel("Param_1")
-    ax.set_zlabel(var)
-    ax.set_title(f"Param_0 vs Param_1 vs {var}")
-    fig.colorbar(sc, ax=ax, shrink=0.5, aspect=10, label=var)
 
-plt.tight_layout()
-plt.show()
+    print("Optimisation Result:")
+    print("Optimal Parameters: ", [f"{res:.5f}" for res in result.x])
+    print(f"Objective Function Value: {result.fun:.5e}")
 
+    # Save the results
+    filename = 'optimisation_results.txt'
+    save_results(result, filename)
 
-
-
+    print("Results saved to", filename)
 
 
+
+
+#------------------------------#
+#----- Brute Force Method -----#
+#------------------------------#
+
+
+def Brute_Force():
+
+    # Define the columns based on the parameters being changed and all variables in the Economics dictionary  
+    columns = [  
+      f'Param_{j+1}' for j in range(len(Brute_Force_Param[0]))
+    ] + [  
+      "Evaluation",  # Evaluation metric  
+      "Purity",  # Purity of the product  
+      "Recovery",  # Recovery of the product  
+      "TAC_CC",  # Total Annualised Cost of Carbon Capture  
+      "Capex_tot",  # Total Capital Expenditure in 2014 money  
+      "Opex_tot",  # Total Operational Expenditure per year  
+      "Variable_Opex",  # Variable Operational Expenditure per year  
+      "Fixed_Opex",  # Fixed Operational Expenditure per year  
+      "TAC_Cryo",  # Total Annualised Cost of Cryogenic cooling  
+      "Direct_CO2_emission",  # CO2 emissions from the process in tonnes per year
+      "Indirect_CO2_emission",  # CO2 emissions from electricity consumption in tonnes per year"
+      "C_compressor",  # Capital cost of compressors  
+      "C_cooler",  # Capital cost of coolers  
+      "C_membrane",  # Capital cost of membranes  
+      "C_expander",  # Capital cost of expanders  
+      "O_compressor",  # Operational cost of compressors per year  
+      "O_cooler",  # Operational cost of coolers per year  
+      "O_membrane",  # Operational cost of membranes per year  
+      "O_expander",  # Operational cost of expanders per year  
+      "O_heater",  # Operational cost of heat integration from retentate per year  
+      "Penalty_purity",  # Penalty for purity under target  
+      "Penalty_CO2_emission",  # Penalty for CO2 emissions under target  
+    ]
+    # Preallocate for the range of data sets
+    rows = []
+    Invalid = 0 #Count of invalid datasets due to simulation not converging.
+
+    for i in tqdm.tqdm(range(number_evaluation)):
+        Process_param["Recycling_Ratio"] = Brute_Force_Param[i]["Recycling_Ratio"]
+        Membrane_2["Q_A_ratio"] = Brute_Force_Param[i]["Q_A_ratio_2"]
+        #Membrane_2["Pressure_Feed"] = Brute_Force_Param[i]["P_up_2"]
+        #Membrane_1["Q_A_ratio"] = Brute_Force_Param[i]["Q_A_ratio_1"]
+        #Membrane_1["Pressure_Feed"] = Brute_Force_Param[i]["P_up_1"]
+
+        Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
+
+        # Run the optimisation algorithm
+        Economics = Ferrari_Paper_Main(Parameters)
+
+        if isinstance(Economics, dict):
+            row = list(Brute_Force_Param[i].values()) + list(Economics.values())
+            rows.append(row)
+        else: Invalid += 1
+
+    # Convert the list of rows to a DataFrame
+    df = pd.DataFrame(rows, columns=columns)
+
+    filename_df = "optimisation_results_general_costing.csv"
+
+    desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
+
+    # Define the file path correctly using the variable
+    file_path = filename_df
+
+    # Save the DataFrame to a CSV file on the desktop
+    df.to_csv(file_path, index=False)
+
+
+    print(f"{number_evaluation - Invalid} sets of data collected in {file_path} over {number_evaluation} evaluations total ({(number_evaluation - Invalid)/number_evaluation:.2%}). ")
+
+
+    # ================================================
+    # ====== 3D SCATTER PLOTS OF RESULTS  ============
+    # ================================================
+    import matplotlib.pyplot as plt
+
+    # Choose variables to plot
+    econ_vars = ["Evaluation", "Purity", "Recovery", "TAC_CC"]
+
+    # Ensure the parameter columns exist
+    if "Param_1" not in df.columns or "Param_2" not in df.columns:
+        # If columns are unnamed (dict order), rename appropriately
+        df.rename(columns={df.columns[0]: "Param_1", df.columns[1]: "Param_2"}, inplace=True)
+
+    # Create 2x2 grid of 3D scatter plots
+    fig = plt.figure(figsize=(16, 12))
+    for i, var in enumerate(econ_vars, start=1):
+        ax = fig.add_subplot(2, 2, i, projection='3d')
+        sc = ax.scatter(
+            df["Param_1"],
+            df["Param_2"],
+            df[var],
+            c=df[var],
+            cmap='viridis',
+            s=30,
+            alpha=0.8
+        )
+        ax.set_xlabel("Param_0")
+        ax.set_ylabel("Param_1")
+        ax.set_zlabel(var)
+        ax.set_title(f"Param_0 vs Param_1 vs {var}")
+        fig.colorbar(sc, ax=ax, shrink=0.5, aspect=10, label=var)
+
+
+    plt.tight_layout()
+
+    filename_plot = "3D_Scatter_Plots.png"
+    #file_path = os.path.join(desktop_path, filename_plot)
+    file_path = filename_plot
+    plt.savefig(file_path, dpi=300, bbox_inches='tight')
+
+    plt.show()
+
+
+if Method == "Brute_Force":
+    Brute_Force()
+elif Method == "Optimisation":
+    Opti_algorithm()
+else: raise ValueError ("Incorrect method chosen - it should be either Brute_Force or Optimisation")
+
+print("Done - probably")
 
 
 

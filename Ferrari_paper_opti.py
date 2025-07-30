@@ -18,9 +18,8 @@ def Ferrari_Paper_Main(Param):
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\' #input file path here.
     filename = 'Cement_4Comp_FerrariPaper_Flash.usc' #input file name here.
     unisim_path = os.path.join(directory, filename)
-
     with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
-    
+
         Feed = {}
         Flue_Inlet = unisim.get_spreadsheet('Flue_Inlet')
         Feed['Feed_Flow'] = Flue_Inlet.get_cell_value('C3') / 3.6 # feed flow rate from UNISIM in mol/s (from kmol/h)
@@ -154,7 +153,7 @@ def Ferrari_Paper_Main(Param):
 
         ### Run iterations for process recycling loop - Specific to this configuration!
 
-        max_iter = 300
+        max_iter = 250
         tolerance = 5e-5
 
         Placeholder_1={ #Intermediade data storage for the recycling loop entering the first membrane used to check for convergence
@@ -243,7 +242,7 @@ def Ferrari_Paper_Main(Param):
                     raise ValueError("No valid trains found with positive compressor duty.")
                 # Find the train with the lowest compressor duty
                 lowest_duty_train_index, lowest_duty_train = min(valid_trains, key=lambda x: x[1][0])
-                lowest_duty_train.append(lowest_duty_train_index)
+                lowest_duty_train.append(lowest_duty_train_index) #append the index of the train with the lowest duty to know the equipment count
                 return lowest_duty_train
 
             def gather_train_data(start_row):
@@ -272,27 +271,52 @@ def Ferrari_Paper_Main(Param):
         Train1, Train2, Liquefaction = Duty_Gather() # Gather the duties from the solved process
 
         # Gather the energy recovery form the retentate. Assume flue gas at 1 bar and a maximum temperature of 120 C to match original flue gas.
-        Ret1_savings = [Duties.get_cell_value('H21'), Duties.get_cell_value('I21')] # Get the retentate 1 expander (kW) and heater duty (kJ/hr)
-        Ret2_savings = [Duties.get_cell_value('H24'), Duties.get_cell_value('I24')]
-    
-    
+        Expanders = (Duties.get_cell_value('H21'), Duties.get_cell_value('H24')) # Get the retentate expanders duties (kW)
+        Heaters = (Duties.get_cell_value('I24'), Duties.get_cell_value('I24')) # Get the retentate heaters duties (kJ/hr)
+
+        # Gather the cryogenic cooler duties - if any
+        Cryogenics = ( (Train1[3], Membrane_1["Temperature"]) , (Train2[3], Membrane_2["Temperature"]) ) # Get the cryogenic cooler duties (MJ/hr) for each membrane train
+
+        # Add information to the compression trains about their number of compressors and coolers
+        Train1.append(Train1[4]+1) # Append the number of compressors in the train
+        Train1.append(Train1[4]+3)  # Extra heat exchanger for feed cooling and extra one for retentate heat recovery
+
+        Train2.append(Train2[4]+1)
+        if Process_param["Recycling_Ratio"] == 1: # If the recycling ratio is 1, no extra heat exchanger is needed for retentate heat recovery
+            Train2.append(Train2[4]+1)
+        else: 
+            Train2.append(Train2[4]+2)  # Extra heat exchange for retentate heat recovery
+
+        Liquefaction.append(Liquefaction[4]+1)  # Append the number of compressors and heat exchangers in the liquefaction train
+        Liquefaction.append(Liquefaction[4]+1)
+
+        '''
+        Process_specs = {
+        ...
+        "Compressor_trains" : ([duty1, number_of_compressors1], ... , [dutyi, number_of_compressorsi]), # Compressor trains data]
+        "Cooler_trains" : ([area1, waterflow1, number_of_coolers1], ... , [areai, waterflowi, number_of_coolersi]), # Cooler trains data
+        "Membranes" : (Membrane_1, ..., Membrane_i), # Membrane data)
+        "Expanders" : ([expander1_duty], ...[expanderi_duty]), # Expander data
+        "Heaters" : ([heater1_duty], ...[heateri_duty]), # Heater data
+        "Cryogenics" = ([cooling_power1, temperature1], ... [cooling_poweri, temperaturei]), # Cryogenic cooling data
+        }
+        '''
+
         Process_specs = {
             "Feed": Feed,
-            "Membrane_1": Membrane_1,
-            "Membrane_2": Membrane_2,
-            "Pre_cond_1": Train1,
-            "Pre_cond_2": Train2,
-            "Comp_train": Liquefaction,
-            "Ret1_Savings": Ret1_savings,
-            "Ret2_Savings": Ret2_savings,
-            "Process_param": Process_param,
             "Purity": (results_2[1][0]/(1-results_2[1][-1])),
-            "Recovery": results_2[1][0]*results_2[3]/(Feed["Feed_Composition"][0]*Feed["Feed_Flow"])
+            "Recovery": results_2[1][0]*results_2[3]/(Feed["Feed_Composition"][0]*Feed["Feed_Flow"]),
+            "Compressor_trains": ( (Train1[0], Train1[-2]), (Train2[0],Train2[-2]), (Liquefaction[0], Liquefaction[-2]) ),  # Compressor trains data
+            "Cooler_trains": ( (Train1[1], Train2[2], Train1[-1]), (Train2[1],Train2[2], Train2[-1]), (Liquefaction[1], Liquefaction[2], Liquefaction[-1]) ),  # Cooler trains data"
+            "Membranes": (Membrane_1, Membrane_2),
+            "Expanders": Expanders,  # Expander data
+            "Heaters": Heaters,  # Heater data
+            "Cryogenics": Cryogenics,
         }
 
 
-        from Costing import Costing
-        Economics = Costing(Process_specs, Process_param, Membrane_1, Membrane_2)
+        from Costing_General import Costing
+        Economics = Costing(Process_specs, Process_param)
 
 
     return(Economics)
