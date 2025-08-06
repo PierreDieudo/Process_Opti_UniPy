@@ -25,29 +25,29 @@ Most debugging and test messages are removed from this solution ; manual checks 
 #-------------------------------#
 #--- Optimisation Parameters ---#
 #-------------------------------#
-Method = "Brute_Force" # Method is either by Brute_Force or Optimisation
+Method = "Optimisation" # Method is either by Brute_Force or Optimisation
 
 
 # Generate brute force parameters
 Opti_Param = {
     "Recycling_Ratio" : [0, 1],  # Recycling ratio range for the process
     "Q_A_ratio_2" : [1, 10], # Flow/Area ratio for the second stage
-    "P_up_2" : [3, 10],  # Upper pressure range for the second stage in bar    
-    "Q_A_ratio_1" : [0.5, 5], # Flow/Area ratio for the first stage"
-    "P_up_1" : [3, 10],  # Upper pressure range for the first stage in bar"
+    #"P_up_2" : [3, 10],  # Upper pressure range for the second stage in bar    
+    #"Q_A_ratio_1" : [0.5, 5], # Flow/Area ratio for the first stage"
+    #"P_up_1" : [3, 10],  # Upper pressure range for the first stage in bar"
     }
 
 
 # In case of brute force
-number_evaluation = 5000  # Number of evaluations for the brute force method
+number_evaluation = 200  # Number of evaluations for the brute force method
 
 Brute_Force_Param = [  
    {  
        "Recycling_Ratio": np.random.uniform(*Opti_Param["Recycling_Ratio"]),  
        "Q_A_ratio_2": np.random.uniform(*Opti_Param["Q_A_ratio_2"]),  
-       "P_up_2": np.random.uniform(*Opti_Param["P_up_2"]),
-       "Q_A_ratio_1": np.random.uniform(*Opti_Param["Q_A_ratio_1"]),
-       "P_up_1": np.random.uniform(*Opti_Param["P_up_1"]),
+       #"P_up_2": np.random.uniform(*Opti_Param["P_up_2"]),
+       #"Q_A_ratio_1": np.random.uniform(*Opti_Param["Q_A_ratio_1"]),
+       #"P_up_1": np.random.uniform(*Opti_Param["P_up_1"]),
    }  
    for _ in range(number_evaluation)  
 ]
@@ -57,26 +57,26 @@ Brute_Force_Param = [
 #--------------------------#
 
 Membrane_1 = {
-    "Name": 'Membrane_1',
-    "Solving_Method": 'CC',                     # 'CC' or 'CO' - CC is for counter-current, CO is for co-current
-    "Temperature": 35+273.15,                   # Kelvin
-    "Pressure_Feed": 5.80605279885049,                         # bar
-    "Pressure_Permeate": 1,                   # bar
-    "Q_A_ratio": 1.92046790858698,                           # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
-    "Permeance": [360, 13, 60, 360],        # GPU at 35C  - aged - https://doi.org/10.1016/j.memsci.2017.02.012
-    "Pressure_Drop": True,
-    }
+"Name": 'Membrane_1',
+"Solving_Method": 'CC',                     # 'CC' or 'CO' - CC is for counter-current, CO is for co-current
+"Temperature": 30+273.15,                   # Kelvin
+"Pressure_Feed": 3,                         # bar
+"Pressure_Permeate": 1,                     # bar
+"Q_A_ratio": 0.8,                           # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
+"Permeance": [1000, 23, 80, 1000],          # GPU
+"Pressure_Drop": True,
+}
 
 Membrane_2 = {
-    "Name": 'Membrane_2',
-    "Solving_Method": 'CC',                   
-    "Temperature": 35+273.15,                   
-    "Pressure_Feed": 3.34562438356631,                       
-    "Pressure_Permeate": 1,                  
-    "Q_A_ratio": 8.81807746737551,                           # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
-    "Permeance": [360, 13, 60, 360],        # GPU
-    "Pressure_Drop": True,
-    }
+"Name": 'Membrane_2',
+"Solving_Method": 'CC',                   
+"Temperature": 30+273.15,                   
+"Pressure_Feed": 3,                       
+"Pressure_Permeate": 1,                  
+"Q_A_ratio": 6,                           # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
+"Permeance": [1000, 23, 80, 1000],        # GPU
+"Pressure_Drop": True,
+}
 
 Process_param = {
 "Recycling_Ratio" : 0.9, # Ratio of the retentate flow from Membrane 2 that is recycled back to Membrane 1 feed    
@@ -112,18 +112,18 @@ def Opti_algorithm():
     bounds = [  
         Opti_Param["Recycling_Ratio"],  # Recycling ratio range for the process
         Opti_Param["Q_A_ratio_2"],  # Flow/Area ratio for the second stage
-        Opti_Param["P_up_2"],  # Upper pressure range for the second stage in bar    
-        Opti_Param["Q_A_ratio_1"],  # Flow/Area ratio for the first stage"
-        Opti_Param["P_up_1"],  # Upper pressure range for the first stage in bar"
+        #Opti_Param["P_up_2"],  # Upper pressure range for the second stage in bar    
+        #Opti_Param["Q_A_ratio_1"],  # Flow/Area ratio for the first stage"
+        #Opti_Param["P_up_1"],  # Upper pressure range for the first stage in bar"
     ]
     
     # Define the objective function to be minimised
     def objective_function(params):
         Process_param["Recycling_Ratio"] = params[0]
         Membrane_2["Q_A_ratio"] = params[1]
-        Membrane_2["Pressure_Feed"] = params[2]
-        Membrane_1["Q_A_ratio"] = params[3]
-        Membrane_1["Pressure_Feed"] = params[4]
+       # Membrane_2["Pressure_Feed"] = params[2]
+        #Membrane_1["Q_A_ratio"] = params[3]
+        #Membrane_1["Pressure_Feed"] = params[4]
         Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
         Economics = Ferrari_Paper_Main(Parameters)
         if isinstance(Economics, dict):
@@ -142,51 +142,32 @@ def Opti_algorithm():
     callback.n_iter = 1
     callback.start_time = time.time()
 
+
+    def save_results(results, filename):
+        with open(filename, 'w') as f:
+            f.write("Best Parameters: {}\n".format(results.x))
+            f.write("Objective Value: {}\n".format(results.fun))
+            f.write("Iterations: {}\n".format(results.nit))
+            f.write("Convergence Message: {}\n".format(results.message))
+
     # Run the optimisation algorithm
     result = differential_evolution(
         objective_function,
         bounds,
         maxiter = 500,  
         popsize = 20, # WARNING popsize is the factor applied to the number of parameters, so 20 means 100 individuals for 5 parameters - not a population of 20
-        tol = 5e-3,
+        tol = 1e-3,
         callback=callback,
         polish=True
     )
 
-    def Solved_process():
-        Process_param["Recycling_Ratio"] = result.x[0]
-        Membrane_2["Q_A_ratio"] = result.x[1]
-        Membrane_2["Pressure_Feed"] = result.x[2]
-        Membrane_1["Q_A_ratio"] = result.x[3]
-        Membrane_1["Pressure_Feed"] = result.x[4]
-        Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
-        Economics = Ferrari_Paper_Main(Parameters)
-        if isinstance(Economics, dict):
-            return Economics
-        else: 
-            return "Simulation failed to converge"
-
-    Economics = Solved_process()
-
     print("Optimisation Result:")
     print("Optimal Parameters: ", [f"{res:.5f}" for res in result.x])
     print(f"Objective Function Value: {result.fun:.5e}")
-    print(Economics)
-    def save_results(results, Economics, filename):
-        with open(filename, 'w') as f:
-            f.write("Best Parameters: {}\n".format(results.x))
-            f.write("Objective Value: {}\n".format(results.fun))
-            f.write("Iterations: {}\n".format(results.nit))
-            f.write("Convergence Message: {}\n".format(results.message))
-            f.write("Economics: {}\n".format(Economics))
-
-    def format_economics(Economics):
-        return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
     # Save the results
-    filename = 'optimisation_results_laptop_5param_360_GPU.txt'
-    economics_str = format_economics(Economics)
-    save_results(result, economics_str, filename)
+    filename = 'optimisation_results_laptop_forreal.txt'
+    save_results(result, filename)
 
     print("Results saved to", filename)
 
@@ -234,9 +215,9 @@ def Brute_Force():
     for i in tqdm.tqdm(range(number_evaluation)):
         Process_param["Recycling_Ratio"] = Brute_Force_Param[i]["Recycling_Ratio"]
         Membrane_2["Q_A_ratio"] = Brute_Force_Param[i]["Q_A_ratio_2"]
-        Membrane_2["Pressure_Feed"] = Brute_Force_Param[i]["P_up_2"]
-        Membrane_1["Q_A_ratio"] = Brute_Force_Param[i]["Q_A_ratio_1"]
-        Membrane_1["Pressure_Feed"] = Brute_Force_Param[i]["P_up_1"]
+        #Membrane_2["Pressure_Feed"] = Brute_Force_Param[i]["P_up_2"]
+        #Membrane_1["Q_A_ratio"] = Brute_Force_Param[i]["Q_A_ratio_1"]
+        #Membrane_1["Pressure_Feed"] = Brute_Force_Param[i]["P_up_1"]
 
         Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
 
@@ -251,7 +232,7 @@ def Brute_Force():
     # Convert the list of rows to a DataFrame
     df = pd.DataFrame(rows, columns=columns)
 
-    filename_df = "bruteforce_5param_5000sets_360GPU_050825.csv"
+    filename_df = "optimisation_results_general_costing.csv"
 
     desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
 
@@ -264,7 +245,7 @@ def Brute_Force():
 
     print(f"{number_evaluation - Invalid} sets of data collected in {file_path} over {number_evaluation} evaluations total ({(number_evaluation - Invalid)/number_evaluation:.2%}). ")
 
-    '''
+
     # ================================================
     # ====== 3D SCATTER PLOTS OF RESULTS  ============
     # ================================================
@@ -306,7 +287,7 @@ def Brute_Force():
     plt.savefig(file_path, dpi=300, bbox_inches='tight')
 
     plt.show()
-'''
+
 
 if Method == "Brute_Force":
     Brute_Force()

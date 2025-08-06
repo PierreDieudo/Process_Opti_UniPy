@@ -66,6 +66,7 @@ def Ferrari_Paper_Main(Param):
 
         #Function to select the correct membrane compression train - Determined to be the one with the lowest compressor duty
     
+
         def Mem_Train_Choice(Membrane):
         
             unisim.wait_solution()
@@ -90,12 +91,12 @@ def Ferrari_Paper_Main(Param):
                 else: raise ValueError ("Incorrect membrane denomination")
 
             # Filter out trains with None or non-positive compressor duty
-            valid_train_indices = [i for i, train in enumerate(Train_data) if train[0] is not None and train[0] > 0]
+            valid_train_indices = [i for i, train in enumerate(Train_data) if train[0] is not None and train[0] > 0 and train[1] is not None and train[1] >0]
             if not valid_train_indices:
                 raise ValueError("No valid trains found with positive compressor duty.")
         
             # Find the index of the train with the lowest compressor duty in Train_data
-            lowest_duty_train_index = min(range(len(Train_data)), key=lambda i: Train_data[i][0] if Train_data[i][0] is not None and Train_data[i][0] > 0 else float('inf')) #return inf for 0 or undefined
+            lowest_duty_train_index = min(valid_train_indices, key=lambda i: Train_data[i][0])
             lowest_duty_train = Train_data[lowest_duty_train_index]
             # Read the spreadsheet of the corresponding train  
         
@@ -109,7 +110,6 @@ def Ferrari_Paper_Main(Param):
                 Membrane_2['Feed_Flow'] = Mem_train.get_cell_value('C3') / 3.6 # feed flow rate from UNISIM in mol/s (from kmol/h)
                 Membrane_2["Feed_Composition"] = [Mem_train.get_cell_value(f'C{i+4}') for i in range(J)] #feed mole fractions from UNISIM
                 Membrane_2["Train_Data"] = lowest_duty_train # Store the train data in the membrane dictionary
-
 
         #------------------------------------------#
         #--------- Function to run module ---------#
@@ -153,7 +153,7 @@ def Ferrari_Paper_Main(Param):
 
         ### Run iterations for process recycling loop - Specific to this configuration!
 
-        max_iter = 250
+        max_iter = 150
         tolerance = 5e-5
 
         Placeholder_1={ #Intermediade data storage for the recycling loop entering the first membrane used to check for convergence
@@ -233,15 +233,16 @@ def Ferrari_Paper_Main(Param):
         #----------- Export/Import UniSim ----------#
         #-------------------------------------------#
 
-
         def Duty_Gather():  # Gather Duties of the trains from the solved process
             def get_lowest_duty_train(train_data):
                 # Filter out trains with None or non-positive compressor duty
-                valid_trains = [(i, train) for i, train in enumerate(train_data) if train[0] is not None and train[0] > 0]
+                valid_trains = [i for i, train in enumerate(train_data) if train[0] is not None and train[0] > 0 and train[1] is not None and train[1] >0]
                 if not valid_trains:
                     raise ValueError("No valid trains found with positive compressor duty.")
+            
                 # Find the train with the lowest compressor duty
-                lowest_duty_train_index, lowest_duty_train = min(valid_trains, key=lambda x: x[1][0])
+                lowest_duty_train_index = min(valid_trains, key=lambda i: train_data[i][0])
+                lowest_duty_train = train_data[lowest_duty_train_index]
                 lowest_duty_train.append(lowest_duty_train_index) #append the index of the train with the lowest duty to know the equipment count
                 return lowest_duty_train
 
@@ -267,7 +268,6 @@ def Ferrari_Paper_Main(Param):
 
             return Train1_lowest, Train2_lowest, Liquefaction_lowest
 
-
         Train1, Train2, Liquefaction = Duty_Gather() # Gather the duties from the solved process
 
         # Gather the energy recovery form the retentate. Assume flue gas at 1 bar and a maximum temperature of 120 C to match original flue gas.
@@ -287,8 +287,11 @@ def Ferrari_Paper_Main(Param):
         else: 
             Train2.append(Train2[4]+2)  # Extra heat exchange for retentate heat recovery
 
-        Liquefaction.append(Liquefaction[4]+1)  # Append the number of compressors and heat exchangers in the liquefaction train
-        Liquefaction.append(Liquefaction[4]+1)
+        Liquefaction.append(Liquefaction[4]+3)  # Append the number of compressors and heat exchangers in the liquefaction train
+        Liquefaction.append(Liquefaction[4]+3)
+
+        #print(Train1) # compressor duty - heat exchanger area - water flowrate - cryogenic cooler duty - index - number of compressors - number of coolers
+
 
         '''
         Process_specs = {
