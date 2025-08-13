@@ -127,7 +127,11 @@ def Ferrari_Paper_Main(Param):
             Export_to_mass_balance = Membrane, Component_properties, Fibre_Dimensions
 
             J = len(Membrane["Permeance"]) #number of components
-     
+            
+                    # Obtain Permeance with temperature:
+            for i in range(J):
+                Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
+
             # No sweep in any of the membranes in this configuration
    
             results, profile = Hub_Connector(Export_to_mass_balance)
@@ -271,15 +275,15 @@ def Ferrari_Paper_Main(Param):
         Train1, Train2, Liquefaction = Duty_Gather() # Gather the duties from the solved process
 
         # Gather the energy recovery form the retentate. Assume flue gas at 1 bar and a maximum temperature of 120 C to match original flue gas.
-        Expanders = (Duties.get_cell_value('H21'), Duties.get_cell_value('H24')) # Get the retentate expanders duties (kW)
-        Heaters = (Duties.get_cell_value('I24'), Duties.get_cell_value('I24')) # Get the retentate heaters duties (kJ/hr)
+        Expanders = (Duties.get_cell_value('H21'), Duties.get_cell_value('H24'), Duties.get_cell_value('H27')) # Get the retentate expanders duties (kW)
+        Heaters = (Duties.get_cell_value('I21'), Duties.get_cell_value('I24')) # Get the retentate heaters duties (kJ/hr)
 
         # Gather the cryogenic cooler duties - if any
         Cryogenics = ( (Train1[3], Membrane_1["Temperature"]) , (Train2[3], Membrane_2["Temperature"]) ) # Get the cryogenic cooler duties (MJ/hr) for each membrane train
 
         # Add information to the compression trains about their number of compressors and coolers
         Train1.append(Train1[4]+1) # Append the number of compressors in the train
-        Train1.append(Train1[4]+3)  # Extra heat exchanger for feed cooling and extra one for retentate heat recovery
+        Train1.append(Train1[4]+2)  # Extra heat exchanger for retentate heat recovery
 
         Train2.append(Train2[4]+1)
         if Process_param["Recycling_Ratio"] == 1: # If the recycling ratio is 1, no extra heat exchanger is needed for retentate heat recovery

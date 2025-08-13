@@ -31,10 +31,10 @@ def Hub_Connector(Export_to_mass_balance): #general because it will call the cor
         raise ValueError("Number of components does not match data provided")
 
     #Checks the input data for inconsistency
-    if abs(sum(Membrane["Feed_Composition"]) - 1) > 1e-8:
+    if abs(sum(Membrane["Feed_Composition"]) - 1) > 1e-7:
         print(f"Feed composition summing to {np.sum(Membrane["Feed_Composition"]):3f} with array {Membrane["Feed_Composition"]}")
-        raise ValueError("Initial mole fractions do not sum to 1")
-    if Membrane["Sweep_Flow"]!=0 and abs(sum(Membrane["Sweep_Composition"]) - 1) > 1e-8:
+        raise ValueError(f"Initial mole fractions of {Membrane["Name"]} do not sum to 1")
+    if Membrane["Sweep_Flow"]!=0 and abs(sum(Membrane["Sweep_Composition"]) - 1) > 1e-7:
         raise ValueError(f"Initial mole fractions do not sum to 1 ({(sum(Membrane["Sweep_Composition"])):.3e})")
   
 

@@ -21,6 +21,9 @@
     <DebugSymbols>true</DebugSymbols>
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'exe' ">
+    <OutputPath>bin\exe\</OutputPath>
+  </PropertyGroup>
   <ItemGroup>
     <InterpreterReference Include="Global|PythonCore|3.12" />
   </ItemGroup>

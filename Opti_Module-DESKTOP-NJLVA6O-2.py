@@ -21,6 +21,7 @@ Most debugging and test messages are removed from this solution ; manual checks 
 """
 
 
+
 #-------------------------------#
 #--- Optimisation Parameters ---#
 #-------------------------------#
@@ -31,9 +32,9 @@ Method = "Optimisation" # Method is either by Brute_Force or Optimisation
 Opti_Param = {
     "Recycling_Ratio" : [0, 1],  # Recycling ratio range for the process
     "Q_A_ratio_2" : [0.2, 10], # Flow/Area ratio for the second stage
-    "P_up_2" : [2, 20],  # Upper pressure range for the second stage in bar    
-    "Q_A_ratio_1" : [0.5, 25], # Flow/Area ratio for the first stage"
-    "P_up_1" : [2, 20],  # Upper pressure range for the first stage in bar"
+    "P_up_2" : [2, 15],  # Upper pressure range for the second stage in bar    
+    "Q_A_ratio_1" : [0.5, 20], # Flow/Area ratio for the first stage"
+    "P_up_1" : [2, 15],  # Upper pressure range for the first stage in bar"
     "Temperature_1" : [-40, 70],  # Temperature range in Celcius
     "Temperature_2" : [-40, 70],  # Temperature range in Celcius
     }
@@ -95,8 +96,6 @@ Process_param = {
 Component_properties = {
 "Viscosity_param": ([0.0479,0.6112],[0.0466,3.8874],[0.0558,3.8970], [0.03333, -0.23498]), # Viscosity parameters for each component: slope and intercept for the viscosity correlation wiht temperature (in K) - from NIST
 "Molar_mass": [44.009, 28.0134, 31.999,18.01528], # Molar mass of each component in g/mol"        
-"Activation_Energy_Aged": ([12750,52196],[25310,253751],[17130,48081],[12750,52196]), # ([Activation energy - J/mol],[pre-exponential factor - GPU])
-
 }
 
 Fibre_Dimensions = {
@@ -138,7 +137,7 @@ def Opti_algorithm():
         if isinstance(Economics, dict):
             return Economics['Evaluation']  # Return the evaluation metric to be minimised
         else:
-            return 5e9  # If simulation fails, return a large number to avoid this solution
+            return 1e9  # If simulation fails, return a large number to avoid this solution
 
 
     # Callback function to track progress
@@ -195,7 +194,7 @@ def Opti_algorithm():
         return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
     # Save the results
-    filename = 'optimisation_results_SimMach_7param_new_penalty_expander_bounds_train.txt'
+    filename = 'optimisation_results_laptop_5param_new_penalty.txt'
     economics_str = format_economics(Economics)
     save_results(result, economics_str, filename)
 
