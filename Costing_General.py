@@ -189,7 +189,7 @@ def Costing(Process_specs, Process_param): #process specs is dictionary with mem
     Penalty = Penalty_purity + Penalty_CO2_emission # Total penalty for purity and CO2 emissions
 
     ### Estimate cost of carbon capture process as a TAC, add cryogenic cost if any here.
-    TAC_CC = Capex_tot_2014/Process_param["Lifetime"] + Total_Opex + TAC_Cryo
+    TAC_CC = TPC/Process_param["Lifetime"] + Total_Opex + TAC_Cryo
 
     ### Evaluation ###
     Evaluation = TAC_CC + Penalty

@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>859f96b3-8f9f-4cfd-ad5d-452d270aea2f</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>Opti_Module.py</StartupFile>
+    <StartupFile>Cement_CMRC3_Config.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -31,10 +31,10 @@
     <Compile Include="CC.py" />
     <Compile Include="CO.py" />
     <Compile Include="Costing.py" />
-    <Compile Include="Ferrari_paper_opti.py" />
+    <Compile Include="Cement_Ferrari_Config.py" />
     <Compile Include="Hub.py" />
     <Compile Include="Costing_General.py" />
-    <Compile Include="Opti_Module.py" />
+    <Compile Include="Cement_CMRC3_Config.py" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
