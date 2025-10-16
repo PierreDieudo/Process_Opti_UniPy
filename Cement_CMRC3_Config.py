@@ -24,15 +24,26 @@ Filename_input = input("Enter the version of the file: Original, Copy, Copy2, or
 if Filename_input.lower() == "original":
     filename = 'Cement_CRMC_3mem.usc'
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard' #Directory to save results files
+    checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' #Directory to save checkpoint files
 elif Filename_input.lower() == "copy":
     filename = 'Cement_CRMC_3mem_Copy.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+    checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
+    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
 elif Filename_input.lower() == "copy2":
     filename = 'Cement_CRMC_3mem_Copy2.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+    checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
+    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
 elif Filename_input.lower() == "copy3":
     filename = 'Cement_CRMC_3mem_Copy3.usc'
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+    checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
+    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
+
+os.makedirs(checkpoint_dir, exist_ok=True)
+os.makedirs(results_dir, exist_ok=True)
 
 debug_number = 0
 
@@ -189,6 +200,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         Membrane3.set_cell_value('D6', to_bar(Membrane_3["Pressure_Permeate"]))  
 
         unisim.wait_solution(timeout=10, check_pop_ups=5, check_consistency_error=5)
+
         #------------------------------------------------#
         #--------- Get correct feed from Unisim ---------#
         #------------------------------------------------#
@@ -358,13 +370,19 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Convergence_Flowrate = abs( ( (Placeholder_2["Feed_Flow"]) - (Membrane_2["Feed_Flow"] ) ) / (Membrane_2["Feed_Flow"] ) / 100 )
             #print(f'Convergence Composition: {Convergence_Composition:.3e}, Convergence Flowrate: {Convergence_Flowrate*100:.3e}')    
             
+            CO2_in = Feed["Feed_Composition"][0]*Feed["Feed_Flow"]
+            CO2_out = results_3[1][0]*results_3[3] + results_1[0][0]*results_1[2] # out = permeate of mem 3 + retentate of mem 1
+            mass_balance_error_CO2 = abs(CO2_in - CO2_out)/CO2_in
+
+            if mass_balance_error_CO2 > 1:
+                print(f"Warning: CO2 mass balance error is especially high - skipping")
+                return 5e7
+
             #check for convergence
             if j > 0 and Convergence_Composition < tolerance and Convergence_Flowrate < tolerance:  
 
                 ''' co2 mass balance check - should be very close to 0 '''
-                CO2_in = Feed["Feed_Composition"][0]*Feed["Feed_Flow"]
-                CO2_out = results_3[1][0]*results_3[3] + results_1[0][0]*results_1[2] # out = permeate of mem 3 + retentate of mem 1
-                mass_balance_error_CO2 = abs(CO2_in - CO2_out)/CO2_in
+
                 if mass_balance_error_CO2 > 5e-3:
                     print(f"Warning: CO2 mass balance error is {mass_balance_error_CO2:.3%}")
                     return 5e7 
@@ -492,17 +510,19 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
     def Opti_algorithm():
         
-        checkpoint_file = "CMRC_3mem_checkpoint_laptop_180925.pkl"
+        checkpoint_file = "de_checkpoint_laptop_9param_091025.pkl" # Checkpoint file name
+        checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
         popsize = 20  # Population size multiplier
         
                 # ----------------- Load checkpoint or midpoint guess -----------------
         def load_checkpoint():
             """Ask user whether to reload from checkpoint, otherwise use midpoint guess."""
-            if os.path.exists(checkpoint_file):
+
+            if os.path.exists(checkpoint_path):
                 choice = input("A checkpoint was found. Do you want to resume? (y/n): ").strip().lower()
                 if choice == "y":
-                    with open(checkpoint_file, "rb") as f:
+                    with open(checkpoint_path, "rb") as f:
                         checkpoint_data = pickle.load(f)
                     if len(checkpoint_data["best_solution"]) == len(bounds):
                         print(f"Resuming from iteration {checkpoint_data['iteration']} with best solution {checkpoint_data["best_solution"]}")
@@ -588,7 +608,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # Callback function to track progress
         def callback(xk, convergence):
             elapsed_time = time.time() - callback.start_time
-            print(f"Iteration: {callback.n_iter}, Elapsed Time: {elapsed_time:.2f}s, "
+            print(f"Iteration: {callback.n_iter}, Elapsed Time: {elapsed_time/3600:.2f} hr, "
                   f"Best Solution: {xk}, Convergence: {convergence:.4f}")
             print()
 
@@ -645,8 +665,8 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         print("Optimal Parameters: ", [f"{res:.5f}" for res in result.x])
         print(f"Objective Function Value: {result.fun:.5e}")
         print(Economics)
-        def save_results(results, Economics, filename):
-            with open(filename, 'w') as f:
+        def save_results(results, Economics, filepath):
+            with open(filepath, 'w') as f:
                 f.write("Best Parameters: {}\n".format(results.x))
                 f.write("Objective Value: {}\n".format(results.fun))
                 f.write("Iterations: {}\n".format(results.nit))
@@ -659,7 +679,8 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # Save the results
         filename = 'CRMC3_laptop_7param_opti.txt'
         economics_str = format_economics(Economics)
-        save_results(result, economics_str, filename)
+        res_filepath = os.path.join(results_dir, filename)
+        save_results(result, economics_str, res_filepath)
 
         print("Results saved to", filename)
 
@@ -750,10 +771,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # Convert the list of rows to a DataFrame
         df = pd.DataFrame(rows, columns=columns)
 
-        filename_df = "CRMC3_laptop_7param_bruteforce.csv"
+        filename_bruteforce = "CRMC3_laptop_7param_bruteforce.csv"
 
-        # Define the file path correctly using the variable
-        file_path = filename_df
+        file_path = os.path.join(results_dir, filename_bruteforce)
+        df.to_csv(file_path, index=False)
 
         # Save the DataFrame to a CSV file on the desktop
         df.to_csv(file_path, index=False)

@@ -1,4 +1,0 @@
-Best Parameters: [0.99933008 8.62892364 5.09701439 4.90883226 9.91466291]
-Objective Value: 47531123.457336925
-Iterations: 31
-Convergence Message: Optimization terminated successfully.

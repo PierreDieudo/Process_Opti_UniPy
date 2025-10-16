@@ -9,7 +9,6 @@ import pandas as pd
 import tqdm
 import os
 import time
-import sys
 
 """
 
@@ -28,17 +27,28 @@ Most debugging and test messages are removed from this solution ; manual checks 
 
 Filename_input = input("Enter the version of the file: Original, Copy, Copy2, or Copy3: ")
 if Filename_input.lower() == "original":
-    filename = 'Cement_4Comp_FerrariPaper_Flash.usc'
-    directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+    filename = 'Cement_4Comp_FerrariPaper_Flash.usc' #Unisim file name
+    directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\' #Directory of the unisim file
+    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard' #Directory to save results files
+    checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' #Directory to save checkpoint files
 elif Filename_input.lower() == "copy":
     filename = 'Cement_4Comp_FerrariPaper_Flash_Copy.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
+    checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
 elif Filename_input.lower() == "copy2":
     filename = 'Cement_4Comp_FerrariPaper_Flash_Copy2.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
+    checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
 elif Filename_input.lower() == "copy3":
     filename = 'Cement_4Comp_FerrariPaper_Flash_Copy3.usc'
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
+    checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
+
+os.makedirs(checkpoint_dir, exist_ok=True)
+os.makedirs(results_dir, exist_ok=True)
 
 debug_number = 0
 
@@ -58,11 +68,13 @@ else:
 Opti_Param = {
     "Recycling_Ratio" : [0.5, 1],  # Recycling ratio range for the process
     "Q_A_ratio_1" : [0.5, 20], # Flow/Area ratio for the second stage
-    "P_up_1" : [2, 20],  # Upper pressure range for the second stage in bar    
+    "P_up_1" : [2, 20],  # Upper pressure range for the second stage in bar
     "Q_A_ratio_2" : [1, 15], # Flow/Area ratio for the first stage"
-    "P_up_2" : [2, 20],  # Upper pressure range for the first stage in bar"
-    #"Temperature_1" : [-40, 70],  # Temperature range in Celcius
-    #"Temperature_2" : [-40, 70],  # Temperature range in Celcius
+    "P_up_2" : [2, 20],  # Upper pressure range for the first stage in bar
+    "P_perm_1" : [0.24,1],  # Permeate pressure for the first stage in bar 
+    "P_perm_2" : [0.24,1],  # Permeate pressure for the second stage in bar 
+    "Temperature_1" : [-40, 70],  # Temperature range in Celcius
+    "Temperature_2" : [-40, 70],  # Temperature range in Celcius
     }
 
 
@@ -417,17 +429,20 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     #-------------------------------#
 
     def Opti_algorithm():
-        checkpoint_file = "de_checkpoint_laptop_5param_300925.pkl" # Checkpoint file name
+        checkpoint_file = "de_checkpoint_laptop_9param_091025.pkl" # Checkpoint file name
+        checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
+
 
         popsize = 20  # Population size multiplier
         
                 # ----------------- Load checkpoint or midpoint guess -----------------
         def load_checkpoint():
             """Ask user whether to reload from checkpoint, otherwise use midpoint guess."""
-            if os.path.exists(checkpoint_file):
+
+            if os.path.exists(checkpoint_path):
                 choice = input("A checkpoint was found. Do you want to resume? (y/n): ").strip().lower()
                 if choice == "y":
-                    with open(checkpoint_file, "rb") as f:
+                    with open(checkpoint_path, "rb") as f:
                         checkpoint_data = pickle.load(f)
                     if len(checkpoint_data["best_solution"]) == len(bounds):
                         print(f"Resuming from iteration {checkpoint_data['iteration']} with best solution {checkpoint_data["best_solution"]}")
@@ -476,8 +491,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Opti_Param["P_up_1"],  
             Opti_Param["Q_A_ratio_2"],  
             Opti_Param["P_up_2"],  
-            #Opti_Param["Temperature_1"],  
-            #Opti_Param["Temperature_2"],  
+            Opti_Param["P_perm_1"],
+            Opti_Param["P_perm_2"],
+            Opti_Param["Temperature_1"],  
+            Opti_Param["Temperature_2"],  
         ]
 
         # ----------------- Objective function -----------------
@@ -487,8 +504,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane_1["Pressure_Feed"] = params[2]
             Membrane_2["Q_A_ratio"] = params[3]
             Membrane_2["Pressure_Feed"] = params[4]
-            #Membrane_1["Temperature"] = params[5] + 273.15
-            #Membrane_2["Temperature"] = params[6] + 273.15
+            Membrane_1["Pressure_Permeate"] = params[5]
+            Membrane_2["Pressure_Permeate"] = params[6]
+            Membrane_1["Temperature"] = params[-2] + 273.15
+            Membrane_2["Temperature"] = params[-1] + 273.15
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
             Economics = Ferrari_Paper_Main(Parameters)
 
@@ -508,7 +527,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # ----------------- Callback with checkpoint save -----------------
         def callback(xk, convergence):
             elapsed_time = time.time() - callback.start_time
-            print(f"Iteration: {callback.n_iter}, Elapsed Time: {elapsed_time:.2f}s, "
+            print(f"Iteration: {callback.n_iter}, Elapsed Time: {elapsed_time/3600:.2f} hr, "
                   f"Best Solution: {xk}, Convergence: {convergence:.4f}")
             print()
 
@@ -534,7 +553,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             objective_function,
             bounds,
             maxiter=500,  
-            popsize=22,  
+            popsize=popsize,  
             tol=5e-3,
             callback=callback,
             polish=True,
@@ -548,8 +567,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane_1["Pressure_Feed"] = result.x[2]
             Membrane_2["Q_A_ratio"] = result.x[3]
             Membrane_2["Pressure_Feed"] = result.x[4]
-            #Membrane_1["Temperature"] = result.x[5] + 273.15
-            #Membrane_2["Temperature"] = result.x[6] + 273.15
+            Membrane_1["Pressure_Permeate"] = result.x[5]
+            Membrane_2["Pressure_Permeate"] = result.x[6]
+            Membrane_1["Temperature"] = result.x[-2] + 273.15
+            Membrane_2["Temperature"] = result.x[-1] + 273.15
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
             Economics = Ferrari_Paper_Main(Parameters)
 
@@ -566,8 +587,8 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         print(f"Objective Function Value: {result.fun:.5e}")
         print(Economics)
 
-        def save_results(results, Economics, filename):
-            with open(filename, 'w') as f:
+        def save_results(results, Economics, filepath):
+            with open(filepath, 'w') as f:
                 f.write("Best Parameters: {}\n".format(results.x))
                 f.write("Objective Value: {}\n".format(results.fun))
                 f.write("Iterations: {}\n".format(results.nit))
@@ -577,9 +598,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         def format_economics(Economics):
             return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
-        filename = 'Ferrari_laptop_5param_300925.txt' # Output file name
+        filename = 'Ferrari_laptop_9param_300925.txt' # Output file name
+        res_filepath = os.path.join(results_dir, filename)
         economics_str = format_economics(Economics)
-        save_results(result, economics_str, filename)
+        save_results(result, economics_str, res_filepath)
 
         print("Results saved to", filename)
 
@@ -602,8 +624,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 "P_up_1": np.random.uniform(*Opti_Param["P_up_1"]),
                 "Q_A_ratio_2": np.random.uniform(*Opti_Param["Q_A_ratio_2"]),
                 "P_up_2": np.random.uniform(*Opti_Param["P_up_2"]),
-                #"Temperature_1": np.random.uniform(*Opti_Param["Temperature_1"]),
-                #"Temperature_2": np.random.uniform(*Opti_Param["Temperature_2"]),
+                "P_perm_1": np.random.uniform(*Opti_Param["P_perm_1"]),
+                "P_perm_2": np.random.uniform(*Opti_Param["P_perm_2"]),
+                "Temperature_1": np.random.uniform(*Opti_Param["Temperature_1"]),
+                "Temperature_2": np.random.uniform(*Opti_Param["Temperature_2"]),
             }  
             for _ in range(number_evaluation)  
         ]
@@ -663,10 +687,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # Convert the list of rows to a DataFrame
         df = pd.DataFrame(rows, columns=columns)
 
-        filename_df = "Ferrari_desktop_7param_bruteforce.csv"
-
+        filename_bruteforce = "Ferrari_desktop_7param_bruteforce.csv"
+        
         # Define the file path correctly using the variable
-        file_path = filename_df
+        file_path = os.path.join(results_dir, filename_bruteforce)
 
         # Save the DataFrame to a CSV file on the desktop
         df.to_csv(file_path, index=False)
