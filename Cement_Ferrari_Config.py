@@ -1,4 +1,5 @@
 
+import copy
 import numpy as np
 import pickle
 import os
@@ -27,22 +28,22 @@ Most debugging and test messages are removed from this solution ; manual checks 
 
 Filename_input = input("Enter the version of the file: Original, Copy, Copy2, or Copy3: ")
 if Filename_input.lower() == "original":
-    filename = 'Cement_4Comp_FerrariPaper_Flash.usc' #Unisim file name
+    filename = 'Cement_Ferrari2021_nov25.usc' #Unisim file name
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\' #Directory of the unisim file
     results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard' #Directory to save results files
     checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' #Directory to save checkpoint files
 elif Filename_input.lower() == "copy":
-    filename = 'Cement_4Comp_FerrariPaper_Flash_Copy.usc'
+    filename = 'Cement_Ferrari2021_nov25_Copy.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
     results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
     checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
 elif Filename_input.lower() == "copy2":
-    filename = 'Cement_4Comp_FerrariPaper_Flash_Copy2.usc'
+    filename = 'Cement_Ferrari2021_nov25_Copy2.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
     results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
     checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
 elif Filename_input.lower() == "copy3":
-    filename = 'Cement_4Comp_FerrariPaper_Flash_Copy3.usc'
+    filename = 'Cement_Ferrari2021_nov25_Copy3.usc'
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
     results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
     checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
@@ -51,6 +52,8 @@ os.makedirs(checkpoint_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
 
 debug_number = 0
+failed = 0
+sucess = 0
 
 unisim_path = os.path.join(directory, filename)
 
@@ -66,13 +69,13 @@ else:
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Recycling_Ratio" : [0.5, 1],  # Recycling ratio range for the process
+    #"Recycling_Ratio" : [0.5, 1],  # Recycling ratio range for the process
     "Q_A_ratio_1" : [0.5, 20], # Flow/Area ratio for the second stage
     "P_up_1" : [2, 20],  # Upper pressure range for the second stage in bar
-    "Q_A_ratio_2" : [1, 15], # Flow/Area ratio for the first stage"
+    "Q_A_ratio_2" : [1, 20], # Flow/Area ratio for the first stage"
     "P_up_2" : [2, 20],  # Upper pressure range for the first stage in bar
-    "P_perm_1" : [0.24,1],  # Permeate pressure for the first stage in bar 
-    "P_perm_2" : [0.24,1],  # Permeate pressure for the second stage in bar 
+    "P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
+    "P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
     "Temperature_1" : [-40, 70],  # Temperature range in Celcius
     "Temperature_2" : [-40, 70],  # Temperature range in Celcius
     }
@@ -85,24 +88,24 @@ Opti_Param = {
 
 Membrane_1 = {
     "Name": 'Membrane_1',
-    "Solving_Method": 'CC',                 # 'CC' or 'CO' - CC is for counter-current, CO is for co-current
+    "Solving_Method": 'CC_ODE',                 # 'CC' or 'CO' - CC is for counter-current, CO is for co-current
     "Temperature": 35+273.15,               # Kelvin
     "Pressure_Feed": 5.80,                  # bar
     "Pressure_Permeate": 1,                 # bar
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [360, 13, 60, 360],        # GPU at 35C  - aged - https://doi.org/10.1016/j.memsci.2017.02.012
-    "Pressure_Drop": True,
+    "Pressure_Drop": False,
     }
 
 Membrane_2 = {
     "Name": 'Membrane_2',
-    "Solving_Method": 'CC',                   
+    "Solving_Method": 'CC_ODE',                   
     "Temperature": 35+273.15,                   
-    "Pressure_Feed": 3.34562438356631,                       
+    "Pressure_Feed": 4,                       
     "Pressure_Permeate": 1,                  
-    "Q_A_ratio": 8.81807746737551,                          
+    "Q_A_ratio": 8,                          
     "Permeance": [360, 13, 60, 360],        
-    "Pressure_Drop": True,
+    "Pressure_Drop": False,
     }
 
 Process_param = {
@@ -264,12 +267,24 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane["Pressure_Feed"] *= 1e-5  #convert to bar
             Membrane["Pressure_Permeate"] *= 1e-5  
 
-            if np.any(profile<-1e-5):
-                #print(profile)
-                #print("Negative values in the membrane profile") #check for negative values in the profile
-                raise ConvergenceError  # Return a scalar and an empty dictionary as a placeholder
+            errors = []
+            for i in range(J):    
+                # Calculate comp molar flows
+                Feed_Sweep_Mol = Membrane["Feed_Flow"] * Membrane["Feed_Composition"][i] + Membrane["Sweep_Flow"] * Membrane["Sweep_Composition"][i]
+                Retentate_Mol = Membrane["Retentate_Flow"] * Membrane["Retentate_Composition"][i]
+                Permeate_Mol = Membrane["Permeate_Flow"] * Membrane["Permeate_Composition"][i]
+    
+                # Calculate and store the error
+                error = abs((Feed_Sweep_Mol - Retentate_Mol - Permeate_Mol)/Feed_Sweep_Mol)
+                errors.append(error)
 
-
+            # Calculate the cumulated error
+            cumulated_error = sum(errors)
+            #print(f"{Membrane["Name"]} Cumulated Component Mass Balance Error: {cumulated_error:.2e}")    
+            if np.any(profile<-1e-5) or cumulated_error>5e-5:
+                raise ConvergenceError 
+                
+            
             #print(profile)
             return results, profile 
 
@@ -394,6 +409,27 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         Liquefaction.append(Liquefaction[4]+3)  # Append the number of compressors and heat exchangers in the liquefaction train
         Liquefaction.append(Liquefaction[4]+3)
+         
+        
+        #Obtain water content in the compression train to dehydrate
+        H2O_train = []
+        for k in range(3):
+            H2O_train.append(Duties.get_cell_value(f'H{k+30}'))
+        if H2O_train:
+            #print(f'H2O content to be removed from final stream: {max(min(H2O_train),0):.1f} kg/hr')
+            pass
+        else: H2O_train=0
+    
+        #Obtain vacuum pump duty and resulting cooling duty from each membrane:
+        Vacuum_1 = unisim.get_spreadsheet("Vacuum_1")
+        Vacuum_Duty1 = [Vacuum_1.get_cell_value("B10")] # kW
+        Vacuum_Cooling1 = [Vacuum_1.get_cell_value("G10"),Vacuum_1.get_cell_value("H10")]  # Area, WaterFlow
+ 
+        Vacuum_2 = unisim.get_spreadsheet("Vacuum_2")
+        Vacuum_Duty2 = [Vacuum_2.get_cell_value("B10")] 
+        Vacuum_Cooling2 = [Vacuum_2.get_cell_value("G10"),Vacuum_2.get_cell_value("H10")] 
+        #PS: logic is implemented in unisim for coolers. If output of the vacuum pump is not hot (<35 C), the cooler will not be active and will return 0 duty.
+
 
         '''
         Process_specs = {
@@ -403,7 +439,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         "Membranes" : (Membrane_1, ..., Membrane_i), # Membrane data)
         "Expanders" : ([expander1_duty], ...[expanderi_duty]), # Expander data
         "Heaters" : ([heater1_duty], ...[heateri_duty]), # Heater data
-        "Cryogenics" = ([cooling_power1, temperature1], ... [cooling_poweri, temperaturei]), # Cryogenic cooling data
+        "Cryogenics" : ([cooling_power1, temperature1], ... [cooling_poweri, temperaturei]), # Cryogenic cooling data
+        "Dehydration" : ([Mass_flow_H2O]) #mass flow of H2O at 30 bar in the compression train
+        "Vacuum_Pump": ([Pump_Duty_1],[Duty2],...,[Dutyi])
+        "Vacuum_Cooling": ([area1, waterflow1], ... , [areai, waterflowi]) #required when vacuum pump outlet is hot
         }
         '''
 
@@ -417,11 +456,14 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             "Expanders": Expanders,  # Expander data
             "Heaters": Heaters,  # Heater data
             "Cryogenics": Cryogenics,
+            "Dehydration":(max(min(H2O_train),0)),
+            "Vacuum_Pump":(Vacuum_Duty1, Vacuum_Duty2),
+            "Vacuum_Cooling": (Vacuum_Cooling1, Vacuum_Cooling2)
         }
 
-        from Costing_General import Costing
-        Economics = Costing(Process_specs, Process_param)
-
+        from Costing import Costing
+        Economics = Costing(Process_specs, Process_param, Component_properties)
+        
         return(Economics)
 
     #-------------------------------#
@@ -429,7 +471,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     #-------------------------------#
 
     def Opti_algorithm():
-        checkpoint_file = "de_checkpoint_laptop_9param_091025.pkl" # Checkpoint file name
+        checkpoint_file = "de_checkpoint_laptop_8param_201125.pkl" # Checkpoint file name
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
 
@@ -450,7 +492,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
                         # --- bounds-scaled Gaussian population around checkpoint ---
                         widths = np.array([b[1] - b[0] for b in bounds], float)
-                        sigma  = 0.20 * widths
+                        sigma  = 0.40 * widths
                         N, D   = popsize * len(bounds), len(bounds)
                         init_pop = x0 + np.random.normal(0.0, sigma, size=(N, D))
                         init_pop = np.clip(init_pop, [b[0] for b in bounds], [b[1] for b in bounds])
@@ -486,7 +528,6 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         # ----------------- Define bounds -----------------
         bounds = [  
-            Opti_Param["Recycling_Ratio"],  
             Opti_Param["Q_A_ratio_1"],  
             Opti_Param["P_up_1"],  
             Opti_Param["Q_A_ratio_2"],  
@@ -499,30 +540,36 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         # ----------------- Objective function -----------------
         def objective_function(params):
-            Process_param["Recycling_Ratio"] = params[0]
-            Membrane_1["Q_A_ratio"] = params[1]
-            Membrane_1["Pressure_Feed"] = params[2]
-            Membrane_2["Q_A_ratio"] = params[3]
-            Membrane_2["Pressure_Feed"] = params[4]
-            Membrane_1["Pressure_Permeate"] = params[5]
-            Membrane_2["Pressure_Permeate"] = params[6]
+            Membrane_1["Q_A_ratio"] = params[-8]
+            Membrane_1["Pressure_Feed"] = params[-7]
+            Membrane_2["Q_A_ratio"] = params[-6]
+            Membrane_2["Pressure_Feed"] = params[-5]
+            Membrane_1["Pressure_Permeate"] = params[-4]
+            Membrane_2["Pressure_Permeate"] = params[-3]
             Membrane_1["Temperature"] = params[-2] + 273.15
             Membrane_2["Temperature"] = params[-1] + 273.15
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
             Economics = Ferrari_Paper_Main(Parameters)
 
             global debug_number
+            global failed
+            global sucess
             debug_number += 1
-            if debug_number == 10:
-                print("debug: simulation has compiled 10 sets of parameters")
+            if debug_number == 25:
+                print("debug: simulation has compiled 25 sets of parameters")
+                print(f"Total Sucess: {sucess} ({sucess/(sucess+failed)*100:.1f}%) ; Total Failed {failed}")
+                print()
                 debug_number = 0
             if isinstance(Economics, dict):
                 if Economics["Recovery"]>1 or Economics["Purity"]>1:
-                    return 5e9
+                    failed += 1
+                    return 1e10
                 else:
+                    sucess += 1
                     return Economics['Evaluation']
             else:
-                return 5e9  # Large penalty if simulation fails
+                failed += 1
+                return 1e10  # Large penalty if simulation fails
 
         # ----------------- Callback with checkpoint save -----------------
         def callback(xk, convergence):
@@ -537,7 +584,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 "best_solution": xk,
                 "convergence": convergence
             }
-            with open(checkpoint_file, "wb") as f:
+            with open(checkpoint_path, "wb") as f:
                 pickle.dump(checkpoint_data, f)
 
             callback.n_iter += 1
@@ -562,13 +609,12 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         # ----------------- Extract solution -----------------
         def Solved_process():
-            Process_param["Recycling_Ratio"] = result.x[0]
-            Membrane_1["Q_A_ratio"] = result.x[1]
-            Membrane_1["Pressure_Feed"] = result.x[2]
-            Membrane_2["Q_A_ratio"] = result.x[3]
-            Membrane_2["Pressure_Feed"] = result.x[4]
-            Membrane_1["Pressure_Permeate"] = result.x[5]
-            Membrane_2["Pressure_Permeate"] = result.x[6]
+            Membrane_1["Q_A_ratio"] = result.x[-8]
+            Membrane_1["Pressure_Feed"] = result.x[-7]
+            Membrane_2["Q_A_ratio"] = result.x[-6]
+            Membrane_2["Pressure_Feed"] = result.x[-5]
+            Membrane_1["Pressure_Permeate"] = result.x[-4]
+            Membrane_2["Pressure_Permeate"] = result.x[-3]
             Membrane_1["Temperature"] = result.x[-2] + 273.15
             Membrane_2["Temperature"] = result.x[-1] + 273.15
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
@@ -598,7 +644,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         def format_economics(Economics):
             return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
-        filename = 'Ferrari_laptop_9param_300925.txt' # Output file name
+        filename = 'Ferrari_8param_201125.txt' # Output file name
         res_filepath = os.path.join(results_dir, filename)
         economics_str = format_economics(Economics)
         save_results(result, economics_str, res_filepath)
@@ -646,20 +692,26 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
           "Opex_tot",  # Total Operational Expenditure per year  
           "Variable_Opex",  # Variable Operational Expenditure per year  
           "Fixed_Opex",  # Fixed Operational Expenditure per year  
-          "TAC_Cryo",  # Total Annualised Cost of Cryogenic cooling  
+          "TAC_Cryo",  # Total Annualised Cost of Cryogenic cooling
+          "TAC_Dehydration",
           "Direct_CO2_emission",  # CO2 emissions from the process in tonnes per year
           "Indirect_CO2_emission",  # CO2 emissions from electricity consumption in tonnes per year"
           "C_compressor",  # Capital cost of compressors  
+          "C_vacuum_pump",
+          "C_vacuum_cooler",
           "C_cooler",  # Capital cost of coolers  
           "C_membrane",  # Capital cost of membranes  
           "C_expander",  # Capital cost of expanders  
           "O_compressor",  # Operational cost of compressors per year  
+          "O_vacuum_pump",
+          "O_vacuum_cooler",
           "O_cooler",  # Operational cost of coolers per year  
           "O_membrane",  # Operational cost of membranes per year  
           "O_expander",  # Operational cost of expanders per year  
           "O_heater",  # Operational cost of heat integration from retentate per year  
           "Penalty_purity",  # Penalty for purity under target  
           "Penalty_CO2_emission",  # Penalty for CO2 emissions under target  
+          "Cost_of_Capture",
         ]
         # Preallocate for the range of data sets
         rows = []

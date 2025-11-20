@@ -36,7 +36,7 @@ def mass_balance_CC(vars):
     J = len(Membrane["Feed_Composition"])
     min_volumes = [3]  # minimum of 5 volumes
     for i in range(J):  # (Coker and Freeman, 1998)
-        N_i = (Membrane["Feed_Flow"] * (1 - Membrane["Feed_Composition"][i] + 0.005) * Membrane["Permeance"][i] * Membrane["Pressure_Feed"] * Membrane["Feed_Composition"][i]) / (Membrane["Feed_Flow"] * 0.005)
+        N_i = (Membrane["Area"] * (1 - Membrane["Feed_Composition"][i] + 0.005) * Membrane["Permeance"][i] * Membrane["Pressure_Feed"] * Membrane["Feed_Composition"][i]) / (Membrane["Feed_Flow"] * 0.005)
         min_volumes.append(N_i)
     n_volumes = min(round(max(min_volumes)), 1000)
 
