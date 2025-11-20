@@ -51,9 +51,11 @@ elif Filename_input.lower() == "copy3":
 os.makedirs(checkpoint_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
 
-debug_number = 0
+attempted_run = 0
 failed = 0
-sucess = 0
+success = 0
+columns_tracking = ['Total Evaluations', 'Successful Evaluations', 'Failed Evaluations', 'Success Percentage']
+opti_tracking = pd.DataFrame(columns=columns_tracking)
 
 unisim_path = os.path.join(directory, filename)
 
@@ -551,21 +553,28 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
             Economics = Ferrari_Paper_Main(Parameters)
 
-            global debug_number
+            global attempted_run
             global failed
-            global sucess
-            debug_number += 1
-            if debug_number == 25:
-                print("debug: simulation has compiled 25 sets of parameters")
-                print(f"Total Sucess: {sucess} ({sucess/(sucess+failed)*100:.1f}%) ; Total Failed {failed}")
+            global success
+            attempted_run += 1
+            if attempted_run % 25 == 0:
+                success_percentage = (success / attempted_run) * 100
+                opti_tracking = opti_tracking.append({
+                    'Total Evaluations': attempted_run,
+                    'Successful Evaluations': success,
+                    'Failed Evaluations': failed,
+                    'Success Percentage': success_percentage
+                }, ignore_index=True)
+                print(f"debug: simulation has compiled {attempted_run} sets of parameters")
+                print(f"Total Sucess: {success} ({success_percentage:.1f}%) ; Total Failed: {failed}")
                 print()
-                debug_number = 0
+
             if isinstance(Economics, dict):
                 if Economics["Recovery"]>1 or Economics["Purity"]>1:
                     failed += 1
                     return 1e10
                 else:
-                    sucess += 1
+                    success += 1
                     return Economics['Evaluation']
             else:
                 failed += 1
@@ -755,12 +764,18 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     if Method == "Brute_Force":
         Brute_Force()
     elif Method == "Optimisation":
-        Opti_algorithm()
+        Opti_algorithm()        
+        desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
+        opti_tracking.to_csv(os.path.join(desktop_path, 'optimization_results.csv'), index=False)
+
     elif Method == "Both":
         Brute_Force()
-        Opti_algorithm()
+        Opti_algorithm()        
+        desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
+        opti_tracking.to_csv(os.path.join(desktop_path, 'optimization_results.csv'), index=False)
+
     else: raise ValueError ("Incorrect method chosen - it should be either Brute_Force or Optimisation")
-    
+
     print("Done - probably")
 
 
