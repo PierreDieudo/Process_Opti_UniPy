@@ -454,9 +454,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Liquefaction_lowest = get_lowest_duty_train(Liquefaction)
 
             return Train1_lowest, Train2_lowest, Train3_lowest, Liquefaction_lowest
-
-
-        Train1, Train2, Train3, Liquefaction = Duty_Gather() # Gather the duties from the solved process
+        try: 
+            Train1, Train2, Train3, Liquefaction = Duty_Gather() # Gather the duties from the solved process
+        except ConvergenceError:
+            return 5e8
 
         # Gather the energy recovery form the retentate. Assume flue gas at 1 bar and a maximum temperature of 120 C to match original flue gas.
         Expanders = (Duties.get_cell_value('H27'), Duties.get_cell_value('H33'), Duties.get_cell_value('H30') ) # Get the retentate expanders duties (kW)    
