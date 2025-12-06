@@ -113,12 +113,16 @@ Membrane_3 = {
 
 
 Process_param = {
-"Target_Purity" : 0.95,     # Target purity of the dry permeate from Membrane 3
-"Target_Recovery" : 0.9,    # Target recovery from Membrane 3 - for now not a hard limit, but a target to be achieved
+"Recycling_Ratio" : 1,      # Ratio of the retentate flow from Membrane 2 that is recycled back to Membrane 1 feed    
+"Target_Purity" : 0.95,     # Target purity of the dry permeate from Membrane 2
+"Target_Recovery" : 0.9,    # Target recovery from Membrane 2 - for now not a hard limit, but a target to be achieved
 "Replacement_rate": 4,      # Replacement rate of the membranes (in yr)
 "Operating_hours": 8000,    # Operating hours per year
 "Lifetime": 20,             # Lifetime of the plant (in yr)
+"Base_Clinker_Production": 9.65e5, #(tn/yr) 
 "Base Plant Cost": 149.8 * 1e6,     # Total direct cost of plant (no CCS) in 2014 money
+"Base_Plant_Primary_Emission": (846)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
+"Base_Plant_Secondary_Emission": (34)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
 "Contingency": 0.3,         # or 0.4 (30% or 40% contingency for process design - based on TRL)
 }
 

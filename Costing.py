@@ -71,6 +71,7 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
     Owner_Cost = 0.07 # CEMCAP
     Project_Contingency = 0.15 # CEMCAP
     Indirect_Emission_rate = 262*1e-6 # Electricity generation specific emissions (EU 2014) - in tnCO2/kWh
+    Electrivity_Generation_Efficiency = 0.459 # Energy Generation Efficiency of the European grid used in CEMCAP - used to determine SPECCA
     Dehydration_Cost = 4779 #$2018 per tn of H2O removed at 0 bar in compression train - doi: 10.1016/j.cherd.2018.07.004
 
     
@@ -201,14 +202,25 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
 
     TAC_other = TAC_Cryo + TAC_Dehydration
 
-    ### Penalty evaluation for Purity / Recovery ###
+    ### Penalty evaluation for Purity ###
     Penalty_purity = 5e11 * (Process_param["Target_Purity"] - Process_specs["Purity"]) if (Process_param["Target_Purity"] - Process_specs["Purity"]) > 0 else 0 
     
+    ### Emissions due to cryognenic systems:
+    Cryo_Energy = 0
+    for Cryo in Process_specs["Cryogenics"]:
+        T = Cryo[1]
+        Cryo_COP = 1.93e-8*(T**5) -2.30e-5*(T**4) +1.10e-2*(T**3) -2.61*(T**2) + 3.11e2*T - 1.48e4
+        Cryo_Energy += Cryo[0] * 1e6 /3600  * Process_param["Operating_hours"] / Cryo_COP #from GJ/hr to kWh/yr including the coefficient of performance
+    print(f'Cryogenic power consumption {Cryo_Energy:.3e} kWh/yr')
+    Power_Consumption += Cryo_Energy
+
+    ### Penalty for CO2 emissions ###
     Primary_emission = (1- Process_specs["Recovery"]) * Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] #(mol/s) CO2 emissions from the process
     Primary_emission *= Process_param["Operating_hours"] * 3600 # convert to mol/yr
     Primary_emission *= 44.01 * 1e-6 # convert to tonnes/yr (44.01 g/mol)
     Secondary_Emission = Power_Consumption * Indirect_Emission_rate # (tonnes/yr) CO2 emissions from electricity consumption
-    Penalty_CO2_emission = (Primary_emission+Secondary_Emission) * Carbon_Tax #eur/yr 
+    Equiv_Emission = Primary_emission + Secondary_Emission
+    Penalty_CO2_emission = Equiv_Emission * Carbon_Tax #eur/yr 
     
     #Extra_Penalty = 1e10 * (0.90 - Process_specs["Recovery"]) if (0.90 - Process_specs["Recovery"]) > 0 else 0 # Extra penalty for recovery under 90% 
 
@@ -223,6 +235,11 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
     ### Cost of Capture ###
     Cost_of_Capture = TAC_CC / ( Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] * Process_param["Operating_hours"] * 3600 * Process_specs["Recovery"] * Comp_properties["Molar_mass"][0] * 1e-6 ) #TAC / (CO2 in feed [mol/s] * 3600 [s/hr] * 8000 [hr/yr] * Recovery * 44 [g/mol] * 1e-6 [tn/g]) = eur per tonne of CO2 captured
 
+    ### Specific Primary Energy Consumption for CO2 Avoided ###
+    q_eq_ccs = Power_Consumption*3.6/Electrivity_Generation_Efficiency #primary consumption of the CCS plant (in MJ/yr)
+    e_eq_ccs = Equiv_Emission * 1000 #kgco2/yr
+    e_eq_base = Process_param["Base_Plant_Primary_Emission"]+Process_param["Base_Plant_Secondary_Emission"] #base plant total emission in kgCO2/yr
+    SPECCA = (q_eq_ccs)/(e_eq_base-(e_eq_ccs+Process_param["Base_Plant_Secondary_Emission"])) #MJ/kgCO2
     Economics = {
         "Evaluation": float(Evaluation),
         "Purity": float(Process_specs["Purity"]),  # Purity of the product
@@ -252,7 +269,9 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
         "O_heater": O_heater,  # Operational cost of heat integration from retentate per year
         "Penalty_purity": Penalty_purity,  # Penalty for purity under target
         "Penalty_CO2_emission": Penalty_CO2_emission,  # Penalty for CO2 emissions under target
-        "Cost_of_Capture": Cost_of_Capture
+        "Power_Consumption": Power_Consumption,  # Power consumption in kWhe/yr
+        "Cost_of_Capture": Cost_of_Capture,
+        "SPECCA": SPECCA,
 
         }
 

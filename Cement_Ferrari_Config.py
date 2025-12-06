@@ -11,6 +11,11 @@ import tqdm
 import os
 import time
 
+#the ode solver sometimes returns these warning.Since we already handle incorrect mass balances we can safely ignore them.
+import warnings
+from scipy.linalg import LinAlgWarning
+warnings.filterwarnings("ignore", category=LinAlgWarning) 
+
 """
 
 This module is used to run the optimisation for the process simulation, would it be by brute force or using an optimisation algorithm.
@@ -30,23 +35,23 @@ Filename_input = input("Enter the version of the file: Original, Copy, Copy2, or
 if Filename_input.lower() == "original":
     filename = 'Cement_Ferrari2021_nov25.usc' #Unisim file name
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\' #Directory of the unisim file
-    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard' #Directory to save results files
+    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard\\' #Directory to save results files
     checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' #Directory to save checkpoint files
 elif Filename_input.lower() == "copy":
     filename = 'Cement_Ferrari2021_nov25_Copy.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
-    checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
+    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard\\'
+    checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files\\'
 elif Filename_input.lower() == "copy2":
     filename = 'Cement_Ferrari2021_nov25_Copy2.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
-    checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
+    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard\\'
+    checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files\\'
 elif Filename_input.lower() == "copy3":
     filename = 'Cement_Ferrari2021_nov25_Copy3.usc'
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard'
-    checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files'
+    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard\\'
+    checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
 
 os.makedirs(checkpoint_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
@@ -54,9 +59,12 @@ os.makedirs(results_dir, exist_ok=True)
 attempted_run = 0
 failed = 0
 success = 0
-columns_tracking = ['Total Evaluations', 'Successful Evaluations', 'Failed Evaluations', 'Success Percentage']
-opti_tracking = pd.DataFrame(columns=columns_tracking)
-
+opti_tracking = pd.DataFrame({
+    "Total Evaluations": pd.Series(dtype=int),
+    "Successful Evaluations": pd.Series(dtype=int),
+    "Failed Evaluations": pd.Series(dtype=int),
+    "Success Percentage": pd.Series(dtype=float)
+})
 unisim_path = os.path.join(directory, filename)
 
 #-------------------------------#
@@ -73,9 +81,9 @@ else:
 Opti_Param = {
     #"Recycling_Ratio" : [0.5, 1],  # Recycling ratio range for the process
     "Q_A_ratio_1" : [0.5, 20], # Flow/Area ratio for the second stage
-    "P_up_1" : [2, 20],  # Upper pressure range for the second stage in bar
-    "Q_A_ratio_2" : [1, 20], # Flow/Area ratio for the first stage"
-    "P_up_2" : [2, 20],  # Upper pressure range for the first stage in bar
+    "P_up_1" : [1.3, 20],  # Upper pressure range for the second stage in bar
+    "Q_A_ratio_2" : [1, 30], # Flow/Area ratio for the first stage"
+    "P_up_2" : [1.3, 20],  # Upper pressure range for the first stage in bar
     "P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
     "P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
     "Temperature_1" : [-40, 70],  # Temperature range in Celcius
@@ -117,7 +125,10 @@ Process_param = {
 "Replacement_rate": 4,      # Replacement rate of the membranes (in yr)
 "Operating_hours": 8000,    # Operating hours per year
 "Lifetime": 20,             # Lifetime of the plant (in yr)
+"Base_Clinker_Production": 9.65e5, #(tn/yr) 
 "Base Plant Cost": 149.8 * 1e6,     # Total direct cost of plant (no CCS) in 2014 money
+"Base_Plant_Primary_Emission": (846)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
+"Base_Plant_Secondary_Emission": (34)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
 "Contingency": 0.3,         # or 0.4 (30% or 40% contingency for process design - based on TRL)
 }
 
@@ -196,7 +207,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         def Mem_Train_Choice(Membrane):
         
-            unisim.wait_solution()
+            unisim.wait_solution(timeout=10, check_pop_ups=2, check_consistency_error=3)
 
             Train_data = []
             for i in range(3):  
@@ -205,14 +216,14 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                         Duties.get_cell_value(f'H{i+9}'),  # Compressor Duty (kW)
                         Duties.get_cell_value(f'I{i+9}'),  # Hex Area (m2)
                         Duties.get_cell_value(f'J{i+9}'),  # Water Flowrate (kg/hr)
-                        Duties.get_cell_value(f'K{i+9}')/1e6   # Cryogenic Cooler Duty (GJ/hr)
+                        Duties.get_cell_value(f'K{i+9}') / 1e6 if Duties.get_cell_value(f'K{i+9}') is not None and Duties.get_cell_value(f'K{i+9}') > 0 else 0  # Cryogenic Cooler Duty (MJ/hr)
                     ])
                 elif Membrane == Membrane_2:
                     Train_data.append([  
                         Duties.get_cell_value(f'H{i+15}'),  # Compressor Duty (kW)
                         Duties.get_cell_value(f'I{i+15}'),  # Hex Area (m2)
                         Duties.get_cell_value(f'J{i+15}'),   # Water Flowrate (kg/hr)
-                        Duties.get_cell_value(f'K{i+15}')/1e6   # Cryogenic Cooler Duty (GJ/hr)
+                        Duties.get_cell_value(f'K{i+15}') / 1e6 if Duties.get_cell_value(f'K{i+15}') is not None and Duties.get_cell_value(f'K{i+15}') > 0 else 0  # Cryogenic Cooler Duty (MJ/hr)
                     ])
 
                 else: raise ValueError ("Incorrect membrane denomination")
@@ -281,9 +292,8 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 errors.append(error)
 
             # Calculate the cumulated error
-            cumulated_error = sum(errors)
-            #print(f"{Membrane["Name"]} Cumulated Component Mass Balance Error: {cumulated_error:.2e}")    
-            if np.any(profile<-1e-5) or cumulated_error>5e-5:
+            cumulated_error = sum(errors) - errors[-1] # Remove water because its relative error is large at low temperature (1e-4). Its absolute error however is negligible due to its very low concentration
+            if np.any(profile<-1e-5) or cumulated_error>1e-5 or errors[-1]>1e-3:
                 raise ConvergenceError 
                 
             
@@ -371,9 +381,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                         Duties.get_cell_value(f'H{i+start_row}'),  # Compressor Duty (kW)
                         Duties.get_cell_value(f'I{i+start_row}'),  # Hex Area (m2)
                         Duties.get_cell_value(f'J{i+start_row}'),  # Water Flowrate (kg/hr)
-                        Duties.get_cell_value(f'K{i+start_row}') / 1e6 
-                        if Duties.get_cell_value(f'K{i+start_row}') is not None and Duties.get_cell_value(f'K{i+start_row}') > 0 
-                        else 0  # Cryogenic Cooler Duty (MJ/hr)
+                        Duties.get_cell_value(f'K{i+start_row}') / 1e6 if Duties.get_cell_value(f'K{i+start_row}') is not None and Duties.get_cell_value(f'K{i+start_row}') > 0 else 0  # Cryogenic Cooler Duty (MJ/hr)
                     ]
                     for i in range(3)
                 ]
@@ -389,8 +397,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Liquefaction_lowest = get_lowest_duty_train(Liquefaction)
 
             return Train1_lowest, Train2_lowest, Liquefaction_lowest
-
-        Train1, Train2, Liquefaction = Duty_Gather() # Gather the duties from the solved process
+        try: 
+            Train1, Train2, Liquefaction = Duty_Gather() # Gather the duties from the solved process
+        except ConvergenceError:
+            return 5e8
 
         # Gather the energy recovery form the retentate. Assume flue gas at 1 bar and a maximum temperature of 120 C to match original flue gas.
         Expanders = (Duties.get_cell_value('H21'), Duties.get_cell_value('H24'), Duties.get_cell_value('H27')) # Get the retentate expanders duties (kW)
@@ -417,10 +427,15 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         H2O_train = []
         for k in range(3):
             H2O_train.append(Duties.get_cell_value(f'H{k+30}'))
+
         if H2O_train:
-            #print(f'H2O content to be removed from final stream: {max(min(H2O_train),0):.1f} kg/hr')
-            pass
-        else: H2O_train=0
+            valid_water = []
+            for water in H2O_train:
+                if water is not None:  # Check if the element is not None
+                    valid_water.append(water)
+            H2O_to_remove = max(min(valid_water), 0) if valid_water else 0
+           
+        else: H2O_to_remove=0
     
         #Obtain vacuum pump duty and resulting cooling duty from each membrane:
         Vacuum_1 = unisim.get_spreadsheet("Vacuum_1")
@@ -458,7 +473,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             "Expanders": Expanders,  # Expander data
             "Heaters": Heaters,  # Heater data
             "Cryogenics": Cryogenics,
-            "Dehydration":(max(min(H2O_train),0)),
+            "Dehydration":(H2O_to_remove),
             "Vacuum_Pump":(Vacuum_Duty1, Vacuum_Duty2),
             "Vacuum_Cooling": (Vacuum_Cooling1, Vacuum_Cooling2)
         }
@@ -473,34 +488,46 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     #-------------------------------#
 
     def Opti_algorithm():
-        checkpoint_file = "de_checkpoint_laptop_8param_201125.pkl" # Checkpoint file name
+        checkpoint_file = "de_checkpoint_laptop_8param_211125.pkl" # Checkpoint file name
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
-
 
         popsize = 20  # Population size multiplier
         
                 # ----------------- Load checkpoint or midpoint guess -----------------
         def load_checkpoint():
             """Ask user whether to reload from checkpoint, otherwise use midpoint guess."""
-
+    
             if os.path.exists(checkpoint_path):
                 choice = input("A checkpoint was found. Do you want to resume? (y/n): ").strip().lower()
                 if choice == "y":
                     with open(checkpoint_path, "rb") as f:
                         checkpoint_data = pickle.load(f)
                     if len(checkpoint_data["best_solution"]) == len(bounds):
-                        print(f"Resuming from iteration {checkpoint_data['iteration']} with best solution {checkpoint_data["best_solution"]}")
+                        print(f"Resuming from iteration {checkpoint_data['iteration']} with best solution {checkpoint_data['best_solution']}")
                         x0 = checkpoint_data["best_solution"]
 
                         # --- bounds-scaled Gaussian population around checkpoint ---
                         widths = np.array([b[1] - b[0] for b in bounds], float)
-                        sigma  = 0.40 * widths
+                        sigma  = 0.1 * widths
                         N, D   = popsize * len(bounds), len(bounds)
                         init_pop = x0 + np.random.normal(0.0, sigma, size=(N, D))
                         init_pop = np.clip(init_pop, [b[0] for b in bounds], [b[1] for b in bounds])
                         init_pop[0] = x0
+                        '''
+                        # Inject some random individuals
+                        num_random_individuals = int(0.1 * N)  # 10% of the population
+                        random_individuals = np.random.uniform(
+                            low=[b[0] for b in bounds], 
+                            high=[b[1] for b in bounds], 
+                            size=(num_random_individuals, D)
+                        )
+                        init_pop[-num_random_individuals:] = random_individuals
+                        '''
+                        # Ensure the best solution from checkpoint is included
+                        init_pop[0] = x0
                         return init_pop
                     else:
+                        print(checkpoint_data["best_solution"])
                         print("Checkpoint incompatible with current problem, starting fresh.")
 
             # --- No checkpoint: ask user for initialisation method ---
@@ -515,15 +542,15 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
-                sigma  = 0.20 * widths
+                sigma  = 0.05 * widths
                 N, D   = popsize * len(bounds), len(bounds)
                 init_pop = first_guess + np.random.normal(0.0, sigma, size=(N, D))
                 init_pop = np.clip(init_pop, [b[0] for b in bounds], [b[1] for b in bounds])
                 init_pop[0] = first_guess
                 return np.array(init_pop)
             else:
-                # Use random initialization
-                print("Starting with random initialization.")
+                # Use random initialisation
+                print("Starting with random initialisation.")
                 N, D = popsize * len(bounds), len(bounds)
                 init_pop = np.random.uniform([b[0] for b in bounds], [b[1] for b in bounds], size=(N, D))
                 return np.array(init_pop)
@@ -539,15 +566,15 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Opti_Param["Temperature_1"],  
             Opti_Param["Temperature_2"],  
         ]
-
+        
         # ----------------- Objective function -----------------
         def objective_function(params):
-            Membrane_1["Q_A_ratio"] = params[-8]
-            Membrane_1["Pressure_Feed"] = params[-7]
-            Membrane_2["Q_A_ratio"] = params[-6]
-            Membrane_2["Pressure_Feed"] = params[-5]
-            Membrane_1["Pressure_Permeate"] = params[-4]
-            Membrane_2["Pressure_Permeate"] = params[-3]
+            Membrane_1["Q_A_ratio"] = params[0]
+            Membrane_1["Pressure_Feed"] = params[1]
+            Membrane_2["Q_A_ratio"] = params[2]
+            Membrane_2["Pressure_Feed"] = params[3]
+            Membrane_1["Pressure_Permeate"] = params[4]
+            Membrane_2["Pressure_Permeate"] = params[5]
             Membrane_1["Temperature"] = params[-2] + 273.15
             Membrane_2["Temperature"] = params[-1] + 273.15
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
@@ -556,29 +583,37 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             global attempted_run
             global failed
             global success
+            global opti_tracking
             attempted_run += 1
-            if attempted_run % 25 == 0:
-                success_percentage = (success / attempted_run) * 100
-                opti_tracking = opti_tracking.append({
-                    'Total Evaluations': attempted_run,
-                    'Successful Evaluations': success,
-                    'Failed Evaluations': failed,
-                    'Success Percentage': success_percentage
-                }, ignore_index=True)
-                print(f"debug: simulation has compiled {attempted_run} sets of parameters")
-                print(f"Total Sucess: {success} ({success_percentage:.1f}%) ; Total Failed: {failed}")
-                print()
 
-            if isinstance(Economics, dict):
-                if Economics["Recovery"]>1 or Economics["Purity"]>1:
-                    failed += 1
-                    return 1e10
-                else:
-                    success += 1
-                    return Economics['Evaluation']
+            if isinstance(Economics, dict) and Economics["Recovery"] <= 1 and Economics["Purity"] <= 1:
+                # successful run
+                success += 1
+
+                evaluation_value = Economics["Evaluation"]
             else:
+                # failed run (non-converged or out of constraints)
                 failed += 1
-                return 1e10  # Large penalty if simulation fails
+                evaluation_value = 1e10
+
+            if attempted_run % 25 == 0:
+                # Update success percentage
+                success_percentage = success / attempted_run * 100
+                print(
+                    f"[{attempted_run} Total Runs] Success: {success} "
+                    f"({success_percentage:.1f}%), Failed: {failed}"
+                )
+                new_row = pd.DataFrame([{
+                    "Total Evaluations": attempted_run,
+                    "Successful Evaluations": success,
+                    "Failed Evaluations": failed,
+                    "Success Percentage": success_percentage
+                }])
+
+                opti_tracking = pd.concat([opti_tracking, new_row], ignore_index=True)
+
+            return evaluation_value
+
 
         # ----------------- Callback with checkpoint save -----------------
         def callback(xk, convergence):
@@ -608,10 +643,12 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         result = differential_evolution(
             objective_function,
             bounds,
-            maxiter=500,  
+            maxiter=1000,  
             popsize=popsize,  
             tol=5e-3,
             callback=callback,
+            mutation=(0.5,1.0),
+            recombination=0.7,
             polish=True,
             init=init_setting
         )
@@ -653,7 +690,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         def format_economics(Economics):
             return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
-        filename = 'Ferrari_8param_201125.txt' # Output file name
+        filename = 'Ferrari_8param_261125.txt' # Output file name
         res_filepath = os.path.join(results_dir, filename)
         economics_str = format_economics(Economics)
         save_results(result, economics_str, res_filepath)
