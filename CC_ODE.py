@@ -136,7 +136,7 @@ def mass_balance_CC_ODE(vars):
 
         # Initial conditions
         U_x_0 = vars #input retentate guess for the shooting method 
-        U_y_0 = Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
+        U_y_0 = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
 
         boundary = np.concatenate((U_x_0, U_y_0))
 

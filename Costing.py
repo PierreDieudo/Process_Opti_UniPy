@@ -211,7 +211,7 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
         T = Cryo[1]
         Cryo_COP = 1.93e-8*(T**5) -2.30e-5*(T**4) +1.10e-2*(T**3) -2.61*(T**2) + 3.11e2*T - 1.48e4
         Cryo_Energy += Cryo[0] * 1e6 /3600  * Process_param["Operating_hours"] / Cryo_COP #from GJ/hr to kWh/yr including the coefficient of performance
-    print(f'Cryogenic power consumption {Cryo_Energy:.3e} kWh/yr')
+
     Power_Consumption += Cryo_Energy
 
     ### Penalty for CO2 emissions ###

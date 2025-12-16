@@ -2,7 +2,6 @@
 import copy
 import numpy as np
 import pickle
-import os
 from Hub import Hub_Connector
 from UNISIMConnect import UNISIMConnector
 from scipy.optimize import differential_evolution  
@@ -10,6 +9,9 @@ import pandas as pd
 import tqdm
 import os
 import time
+from collections import deque
+from Optimisation_logger import OptimisationLogger
+
 
 #the ode solver sometimes returns these warning.Since we already handle incorrect mass balances we can safely ignore them.
 import warnings
@@ -35,37 +37,30 @@ Filename_input = input("Enter the version of the file: Original, Copy, Copy2, or
 if Filename_input.lower() == "original":
     filename = 'Cement_Ferrari2021_nov25.usc' #Unisim file name
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\' #Directory of the unisim file
-    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard\\' #Directory to save results files
+    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\' #Directory to save results files
     checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' #Directory to save checkpoint files
 elif Filename_input.lower() == "copy":
     filename = 'Cement_Ferrari2021_nov25_Copy.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard\\'
+    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
     checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files\\'
 elif Filename_input.lower() == "copy2":
     filename = 'Cement_Ferrari2021_nov25_Copy2.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Opti_results_Graveyard\\'
+    results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
     checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files\\'
 elif Filename_input.lower() == "copy3":
     filename = 'Cement_Ferrari2021_nov25_Copy3.usc'
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Opti_results_Graveyard\\'
+    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
     checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
 
 os.makedirs(checkpoint_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
-
-attempted_run = 0
-failed = 0
-success = 0
-opti_tracking = pd.DataFrame({
-    "Total Evaluations": pd.Series(dtype=int),
-    "Successful Evaluations": pd.Series(dtype=int),
-    "Failed Evaluations": pd.Series(dtype=int),
-    "Success Percentage": pd.Series(dtype=float)
-})
 unisim_path = os.path.join(directory, filename)
+
+logger = OptimisationLogger(results_dir)
+
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -138,7 +133,6 @@ Component_properties = {
     "Activation_Energy_Aged": ([12750,321019],[25310,2186946],[15770,196980],[12750,321019]),   # ([Activation energy - J/mol],[pre-exponential factor - GPU])
     "Activation_Energy_Fresh": ([2880,16806],[16520,226481],[3770,3599],[2880,16806]),          #Valid only if temperature is -20 C or under - not considered for now
     }
-
 
 Fibre_Dimensions = {
 "D_in" : 150 * 1e-6,    # Inner diameter in m (from um)
@@ -367,7 +361,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 # Filter out trains with None or non-positive compressor duty
                 valid_trains = [i for i, train in enumerate(train_data) if train[0] is not None and train[0] > 0 and train[1] is not None and train[1] >0]
                 if not valid_trains:
-                    raise ValueError("No valid trains found with positive compressor duty.")
+                    raise ConvergenceError
             
                 # Find the train with the lowest compressor duty
                 lowest_duty_train_index = min(valid_trains, key=lambda i: train_data[i][0])
@@ -477,7 +471,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             "Vacuum_Pump":(Vacuum_Duty1, Vacuum_Duty2),
             "Vacuum_Cooling": (Vacuum_Cooling1, Vacuum_Cooling2)
         }
-
+                
         from Costing import Costing
         Economics = Costing(Process_specs, Process_param, Component_properties)
         
@@ -538,7 +532,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([1,9.11362129, 13.40702624, 3.71798611, 4.59653773, -9.26197132, -34.23333671])
+                first_guess = np.array([9.11362129, 13.40702624, 3.71798611, 4.59653773, -9.26197132, -34.23333671])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
@@ -569,6 +563,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         
         # ----------------- Objective function -----------------
         def objective_function(params):
+            # Update Membrane parameters
             Membrane_1["Q_A_ratio"] = params[0]
             Membrane_1["Pressure_Feed"] = params[1]
             Membrane_2["Q_A_ratio"] = params[2]
@@ -577,43 +572,32 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane_2["Pressure_Permeate"] = params[5]
             Membrane_1["Temperature"] = params[-2] + 273.15
             Membrane_2["Temperature"] = params[-1] + 273.15
+
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
             Economics = Ferrari_Paper_Main(Parameters)
 
-            global attempted_run
-            global failed
-            global success
-            global opti_tracking
-            attempted_run += 1
+            # Update total attempts
+            logger.attempted_run += 1
 
-            if isinstance(Economics, dict) and Economics["Recovery"] <= 1 and Economics["Purity"] <= 1:
-                # successful run
-                success += 1
-
+            if isinstance(Economics, dict) and Economics["Recovery"] <= 1 and Economics["Purity"] <= 1 and Economics["SPECCA"] > 0 and Economics["Recovery"]>=0.025: #eliminating non-converged and non-physical solutions
+                # Successful run
+                logger.success += 1
                 evaluation_value = Economics["Evaluation"]
+
+                # Log the successful run
+                logger.log(params, Economics)
             else:
-                # failed run (non-converged or out of constraints)
-                failed += 1
+                # Failed run
+                logger.failed += 1
                 evaluation_value = 1e10
 
-            if attempted_run % 25 == 0:
-                # Update success percentage
-                success_percentage = success / attempted_run * 100
-                print(
-                    f"[{attempted_run} Total Runs] Success: {success} "
-                    f"({success_percentage:.1f}%), Failed: {failed}"
-                )
-                new_row = pd.DataFrame([{
-                    "Total Evaluations": attempted_run,
-                    "Successful Evaluations": success,
-                    "Failed Evaluations": failed,
-                    "Success Percentage": success_percentage
-                }])
-
-                opti_tracking = pd.concat([opti_tracking, new_row], ignore_index=True)
+            # Print progress every 100 evaluations
+            if logger.attempted_run % 100 == 0:
+                success_percentage = logger.success / logger.attempted_run * 100
+                print(f"[{logger.attempted_run} Total Runs] Success: {logger.success} "
+                      f"({success_percentage:.1f}%), Failed: {logger.failed}")
 
             return evaluation_value
-
 
         # ----------------- Callback with checkpoint save -----------------
         def callback(xk, convergence):
@@ -803,13 +787,11 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     elif Method == "Optimisation":
         Opti_algorithm()        
         desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
-        opti_tracking.to_csv(os.path.join(desktop_path, 'optimization_results.csv'), index=False)
 
     elif Method == "Both":
         Brute_Force()
         Opti_algorithm()        
         desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
-        opti_tracking.to_csv(os.path.join(desktop_path, 'optimization_results.csv'), index=False)
 
     else: raise ValueError ("Incorrect method chosen - it should be either Brute_Force or Optimisation")
 
