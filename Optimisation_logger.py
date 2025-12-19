@@ -6,12 +6,12 @@ import openpyxl
 from openpyxl import load_workbook
 
 class OptimisationLogger:
-    def __init__(self, results_dir, log_interval=100, rolling_window=200):
-        self.results_dir = results_dir
+    def __init__(self, log_path, log_interval=100, rolling_window=200):
+        self.results_path = log_path
         os.makedirs(self.results_dir, exist_ok=True)
 
         # Paths
-        self.success_log_path = os.path.join(self.results_dir, "success_log.xlsx")
+        self.success_log_path = self.results_path
 
         # Counters
         self.attempted_run = 0

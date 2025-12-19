@@ -58,7 +58,7 @@ elif Filename_input.lower() == "copy3":
 os.makedirs(checkpoint_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
 unisim_path = os.path.join(directory, filename)
-
+log_path = os.path.join(results_dir, f'Optimisation_Log_{Filename_input}.xlsx')
 logger = OptimisationLogger(results_dir)
 
 
