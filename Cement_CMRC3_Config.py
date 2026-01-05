@@ -1,5 +1,3 @@
-
-import copy
 import numpy as np
 import pickle
 from Hub import Hub_Connector
@@ -52,8 +50,10 @@ elif Filename_input.lower() == "copy3":
 os.makedirs(checkpoint_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
 unisim_path = os.path.join(directory, filename)
-log_path = os.path.join(results_dir, f'Optimisation_Log_{Filename_input}.xlsx')
-logger = OptimisationLogger(log_path)
+logger = OptimisationLogger(
+    log_dir=results_dir,
+)
+
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -352,9 +352,9 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
             for i in range(J+3): #Obtain stream from unisim for membrane 2 and put it through pre-conditioning (buffer added to avoid convergence issues)
                 Mem_Inlet_2.set_cell_value(f'C{i+10}', Mem_Inlet_2.get_cell_value(f'B{i+10}'))
-            Mem_Train_Choice(Membrane_2) #Obtain stream after pre-conditioning
 
             try: #Run the second membrane
+                Mem_Train_Choice(Membrane_2) #Obtain stream after pre-conditioning
                 results_2 , profile_2 = Run(Membrane_2)
             except ConvergenceError:
                 return 5e8
@@ -365,9 +365,9 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
             for i in range(J+3): #Obtain stream from unisim for membrane 1 and put it through pre-conditioning (buffer added to avoid convergence issues)
                 Mem_Inlet_1.set_cell_value(f'C{i+3}', Mem_Inlet_1.get_cell_value(f'B{i+3}'))
-            Mem_Train_Choice(Membrane_1)
 
             try: #Run the first membrane
+                Mem_Train_Choice(Membrane_1)
                 results_1 , profile_1 = Run(Membrane_1)
             except ConvergenceError:
                 return 5e8
@@ -378,9 +378,9 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
             for i in range(J+3): #Obtain stream from unisim for membrane 3 and put it through pre-conditioning (buffer added to avoid convergence issues)
                 Mem_Inlet_3.set_cell_value(f'C{i+3}', Mem_Inlet_3.get_cell_value(f'B{i+3}'))
-            Mem_Train_Choice(Membrane_3)
             
             try: #Run the third membrane
+                Mem_Train_Choice(Membrane_3)
                 results_3 , profile_3 = Run(Membrane_3)
             except ConvergenceError:
                 return 5e8
@@ -398,7 +398,6 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             mass_balance_error_CO2 = abs(CO2_in - CO2_out)/CO2_in
 
             if mass_balance_error_CO2 > 1:
-                print(f"Warning: CO2 mass balance error is especially high - skipping")
                 return 5e7
 
             #check for convergence
@@ -407,7 +406,6 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 ''' co2 mass balance check - should be very close to 0 '''
 
                 if mass_balance_error_CO2 > 5e-3:
-                    print(f"Warning: CO2 mass balance error is {mass_balance_error_CO2:.3%}")
                     return 5e7 
 
 
@@ -561,7 +559,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
     def Opti_algorithm():
         
-        checkpoint_file = "de_checkpoint_laptop_CRMC3_9_151225.pkl" # Checkpoint file name
+        checkpoint_file = "de_checkpoint_laptop_CRMC3_12params_191225.pkl" # Checkpoint file name
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
         popsize = 20  # Population size multiplier
@@ -611,7 +609,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([0,0,0,0,0,0,0,0,0,0])
+                first_guess = np.array([15.05,5.61,68.59,3.02,8.19,6.17,0.54,0.587,0.6167,17.82,-0.364,-9.226])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
@@ -661,33 +659,26 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane_2["Temperature"] = params[10] + 273.15
             Membrane_3["Temperature"] = params[11] + 273.15
             
-            print(params)
+            Parameters = (
+                Membrane_1, Membrane_2, Membrane_3,
+                Process_param, Component_properties,
+                Fibre_Dimensions, J
+            )
 
-            # Update total attempts
-            logger.attempted_run += 1
-
-            Parameters = Membrane_1, Membrane_2, Membrane_3, Process_param, Component_properties, Fibre_Dimensions, J
             Economics = CMRC_3_Main(Parameters)
 
-            if isinstance(Economics, dict) and Economics["Recovery"] <= 1 and Economics["Purity"] <= 1 and Economics["SPECCA"] > 0 and Economics["Recovery"]>=0.025: #eliminating non-converged and non-physical solutions
-                # Successful run
-                logger.success += 1
-                evaluation_value = Economics["Evaluation"]
-
-                # Log the successful run
-                logger.log(params, Economics)
-            else:
-                # Failed run
-                logger.failed += 1
-                evaluation_value = 1e10
+            evaluation_value = logger.log(params, Economics)
 
             # Print progress every 100 evaluations
             if logger.attempted_run % 100 == 0:
                 success_percentage = logger.success / logger.attempted_run * 100
-                print(f"[{logger.attempted_run} Total Runs] Success: {logger.success} "
-                      f"({success_percentage:.1f}%), Failed: {logger.failed}")
+                print(f"[{logger.attempted_run} Total Runs] "
+                      f"Success: {logger.success} "
+                      f"({success_percentage:.1f}%), "
+                      f"Failed: {logger.failed}")
 
             return evaluation_value
+
 
         # Callback function to track progress
         def callback(xk, convergence):
@@ -750,6 +741,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 return "Simulation failed to converge"
 
         Economics = Solved_process()
+        logger.close()
 
         print("Optimisation Result:")
         print("Optimal Parameters: ", [f"{res:.5f}" for res in result.x])
@@ -768,7 +760,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
         # Save the results
-        filename = 'CRMC3_laptop_9param_151225.txt'
+        filename = 'CRMC3_laptop_12param_191225.txt'
         economics_str = format_economics(Economics)
         res_filepath = os.path.join(results_dir, filename)
         save_results(result, economics_str, res_filepath)

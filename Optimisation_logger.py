@@ -1,17 +1,57 @@
 import os
-import pandas as pd
-import numpy as np
+import inspect
+from datetime import datetime
 from collections import deque
-import openpyxl
+import sys
+import numpy as np
+import pandas as pd
 from openpyxl import load_workbook
+from pyparsing import originalTextFor
+
 
 class OptimisationLogger:
-    def __init__(self, log_path, log_interval=100, rolling_window=200):
-        self.results_path = log_path
-        os.makedirs(self.results_dir, exist_ok=True)
+    """
+    Logger for long optimisation runs.
 
-        # Paths
-        self.success_log_path = self.results_path
+    - Owns success/failure logic
+    - Owns all counters
+    - Creates a unique Excel file per run
+    - Logs raw results and rolling averages
+    """
+
+    METRIC_KEYS = [
+        "Evaluation",
+        "Purity",
+        "Recovery",
+        "TAC_CC",
+        "Power_Consumption",
+        "Cost_of_Capture",
+        "SPECCA",
+    ]
+
+    # =====================================================
+    #                    INIT
+    # =====================================================
+    def __init__(
+        self,
+        log_dir,
+        log_interval=5,
+        rolling_window=5,
+        failure_penalty=1e10,
+        min_recovery=0.025,
+    ):
+        # Directory only — filename is auto-generated
+        self.log_dir = log_dir or "."
+        os.makedirs(self.log_dir, exist_ok=True)
+
+        self.log_interval = log_interval
+        self.rolling_window = rolling_window
+        self.failure_penalty = failure_penalty
+        self.min_recovery = min_recovery
+
+        # Determined on first call
+        self.param_count = None
+        self.path = None
 
         # Counters
         self.attempted_run = 0
@@ -19,150 +59,198 @@ class OptimisationLogger:
         self.failed = 0
 
         # Buffers
-        self.log_interval = log_interval
-        self.rolling_window = rolling_window
-        self.success_log_buffer = []
-        self.rolling_log_buffer = []
-        self.rolling_buffer = deque(maxlen=self.rolling_window)
+        self.raw_buffer = []
+        self.rolling_buffer = deque(maxlen=rolling_window)
+        self.rolling_ma_buffer = []
+        self.summary_buffer = []
 
-        # Initialise summary dataframe
-        self.opti_tracking = pd.DataFrame({
-            "Total Evaluations": pd.Series(dtype=int),
-            "Successful Evaluations": pd.Series(dtype=int),
-            "Failed Evaluations": pd.Series(dtype=int),
-            "Success Percentage": pd.Series(dtype=float)
-        })
+    # =====================================================
+    #               FILE INITIALISATION
+    # =====================================================
+    def _build_log_filename(self, param_count):
+        script = os.path.basename(sys.argv[0]) or "interactive"
+        date_str = datetime.now().strftime("%Y-%m-%d")
 
-        # Track if sheets exist
-        self.excel_initialised = {
-            "Raw_Logs": False,
-            f"Rolling_MA_{self.rolling_window}": False
-        }
+        base = f"Optimisation_{script}_P{param_count}_{date_str}"
+        filename = base + ".xlsx"
+        path = os.path.join(self.log_dir, filename)
 
-        # Initialise Excel file with empty sheets
-        with pd.ExcelWriter(self.success_log_path, engine="openpyxl") as writer:
-            pd.DataFrame(columns=[
-                "Run", "Param_1","Param_2","Param_3","Param_4",
-                "Param_5","Param_6","Param_7","Param_8",
-                "Evaluation","Purity","Recovery","TAC_CC",
-                "Power_Consumption","Cost_of_Capture","SPECCA"
-            ]).to_excel(writer, sheet_name="Raw_Logs", index=False)
-            pd.DataFrame(columns=[
-                "Run","Param_1","Param_2","Param_3","Param_4",
-                "Param_5","Param_6","Param_7","Param_8",
-                "Evaluation","Purity","Recovery","TAC_CC",
-                "Power_Consumption","Cost_of_Capture","SPECCA"
-            ]).to_excel(writer, sheet_name=f"Rolling_MA_{self.rolling_window}", index=False)
+        run_idx = 1
+        while os.path.exists(path):
+            run_idx += 1
+            path = os.path.join(self.log_dir, f"{base}_run{run_idx}.xlsx")
 
+        return path
+
+    def _initialise_excel(self):
+        with pd.ExcelWriter(self.path, engine="openpyxl") as writer:
+            pd.DataFrame(columns=self._raw_columns()).to_excel(
+                writer, sheet_name="Raw_Logs", index=False
+            )
+            pd.DataFrame(columns=self._rolling_columns()).to_excel(
+                writer,
+                sheet_name=f"Rolling_MA_{self.rolling_window}",
+                index=False,
+            )
+            pd.DataFrame(
+                columns=[
+                    "Total Evaluations",
+                    "Successful Evaluations",
+                    "Failed Evaluations",
+                    "Success Percentage",
+                ]
+            ).to_excel(writer, sheet_name="Summary", index=False)
+
+    # =====================================================
+    #                 COLUMN HELPERS
+    # =====================================================
+    def _param_columns(self):
+        return [f"Param_{i+1}" for i in range(self.param_count)]
+
+    def _raw_columns(self):
+        return ["Run"] + self._param_columns() + self.METRIC_KEYS
+
+    def _rolling_columns(self):
+        return (
+            ["Run"]
+            + [f"{p}_MA{self.rolling_window}" for p in self._param_columns()]
+            + [f"{m}_MA{self.rolling_window}" for m in self.METRIC_KEYS]
+        )
+
+    # =====================================================
+    #              SUCCESS CRITERIA
+    # =====================================================
+    def _is_success(self, Economics):
+        try:
+            return (
+                isinstance(Economics, dict)
+                and isinstance(Economics.get("Evaluation"), (int, float))
+                and np.isfinite(Economics["Evaluation"])
+                and 0 <= Economics["Recovery"] <= 1
+                and 0 <= Economics["Purity"] <= 1
+                and Economics["SPECCA"] > 0
+                and Economics["Recovery"] >= self.min_recovery
+            )
+        except Exception:
+            return False
+
+    # =====================================================
+    #                   PUBLIC API
+    # =====================================================
     def log(self, params, Economics):
         self.attempted_run += 1
 
-        # Check for success
-        is_success = isinstance(Economics, dict) and Economics["Recovery"] <= 1 and Economics["Purity"] <= 1
+        # First call: infer parameter count and create file
+        if self.param_count is None:
+            self.param_count = len(params)
+            self.path = self._build_log_filename(self.param_count)
+            self._initialise_excel()
 
-        if is_success:
-            self.success += 1
-            evaluation_value = Economics["Evaluation"]
-
-            # Raw entry
-            raw_entry = {
-                "Run": self.attempted_run,
-                "Param_1": params[0],
-                "Param_2": params[1],
-                "Param_3": params[2],
-                "Param_4": params[3],
-                "Param_5": params[4],
-                "Param_6": params[5],
-                "Param_7": params[6],
-                "Param_8": params[7],
-                "Evaluation": Economics["Evaluation"],
-                "Purity": Economics["Purity"],
-                "Recovery": Economics["Recovery"],
-                "TAC_CC": Economics["TAC_CC"],
-                "Power_Consumption": Economics["Power_Consumption"],
-                "Cost_of_Capture": Economics["Cost_of_Capture"],
-                "SPECCA": Economics["SPECCA"],
-            }
-
-            self.rolling_buffer.append(raw_entry)
-
-            # Compute rolling means
-            rolling_means = {}
-            for key in raw_entry:
-                if key != "Run":
-                    values = [x[key] for x in self.rolling_buffer]
-                    rolling_means[f"{key}_MA{self.rolling_window}"] = float(np.mean(values))
-            rolling_means["Run"] = self.attempted_run
-
-            # Add to buffers
-            self.success_log_buffer.append(raw_entry)
-            self.rolling_log_buffer.append(rolling_means)
-
-            # Flush to Excel automatically every log_interval
-            if len(self.success_log_buffer) >= self.log_interval:
-                self.flush_to_excel()
-
-        else:
+        if not self._is_success(Economics):
             self.failed += 1
-            evaluation_value = 1e10
+            self._update_summary()
+            return self.failure_penalty
 
-        # Update summary every 100 attempted runs
-        if self.attempted_run % 100 == 0:
-            success_percentage = self.success / self.attempted_run * 100
-            new_row = pd.DataFrame([{
+        # ---------- Successful run ----------
+        self.success += 1
+        print(f"Successful evaluation #{self.attempted_run}")
+        raw_entry = {"Run": self.attempted_run}
+        for i, v in enumerate(params):
+            raw_entry[f"Param_{i+1}"] = v
+
+        for k in self.METRIC_KEYS:
+            raw_entry[k] = Economics.get(k, np.nan)
+
+        self.raw_buffer.append(raw_entry)
+        self.rolling_buffer.append(raw_entry)
+
+        # ---------- Rolling averages ----------
+        rolling_entry = {"Run": self.attempted_run}
+        for key in raw_entry:
+            if key == "Run":
+                continue
+            vals = [x.get(key, np.nan) for x in self.rolling_buffer]
+            arr = np.array([v for v in vals if pd.notna(v)], dtype=float)
+            rolling_entry[f"{key}_MA{self.rolling_window}"] = (
+                np.mean(arr) if arr.size else np.nan
+            )
+
+        self.rolling_ma_buffer.append(rolling_entry)
+
+        ######### PRINTING FOR DEBUGGING #########
+        print(raw_entry)
+        print(self.raw_buffer)
+        print(f'number of entries in raw buffer = {len(self.raw_buffer)}')
+        print()
+        if len(self.raw_buffer) >= self.log_interval:
+            print('TRIGGER FLUSH')
+            self.flush()
+
+        self._update_summary()
+        return Economics["Evaluation"]
+
+    def _update_summary(self):
+        if self.attempted_run % 10 == 0:
+            self.summary_buffer.append({
                 "Total Evaluations": self.attempted_run,
                 "Successful Evaluations": self.success,
                 "Failed Evaluations": self.failed,
-                "Success Percentage": success_percentage
-            }])
-            self.opti_tracking = pd.concat([self.opti_tracking, new_row], ignore_index=True)
+                "Success Percentage": 100 * self.success / self.attempted_run,
+            })
 
-        return evaluation_value
+    # =====================================================
+    #                 EXCEL APPEND
+    # =====================================================
+    def _append_df(self, sheet_name, df):
+        # Read existing sheet to find startrow
+        try:
+            existing = pd.read_excel(self.path, sheet_name=sheet_name)
+            startrow = len(existing) + 1  # leave header
+            header = False
+        except FileNotFoundError:
+            # File doesn’t exist yet
+            startrow = 0
+            header = True
+        except ValueError:
+            # Sheet doesn’t exist yet
+            startrow = 0
+            header = True
+
+        # Use ExcelWriter in append mode
+        with pd.ExcelWriter(
+            self.path, engine="openpyxl", mode="a", if_sheet_exists="overlay"
+        ) as writer:
+            df.to_excel(
+                writer,
+                sheet_name=sheet_name,
+                index=False,
+                header=header,
+                startrow=startrow,
+            )
 
 
-    def flush_to_excel(self):
-        if not self.success_log_buffer and not self.rolling_log_buffer:
-            return
+    def flush(self):
 
-        path = self.success_log_path
 
-        # Ensure the file exists with proper structure
-        if not os.path.exists(path):
-            with pd.ExcelWriter(path, engine="openpyxl") as writer:
-                pd.DataFrame(columns=[
-                    "Run","Param_1","Param_2","Param_3","Param_4",
-                    "Param_5","Param_6","Param_7","Param_8",
-                    "Evaluation","Purity","Recovery","TAC_CC",
-                    "Power_Consumption","Cost_of_Capture","SPECCA"
-                ]).to_excel(writer, sheet_name="Raw_Logs", index=False)
+        print("FLUSH CALLED",
+          "raw:", len(self.raw_buffer),
+          "ma:", len(self.rolling_ma_buffer),
+          "summary:", len(self.summary_buffer))
 
-                pd.DataFrame().to_excel(writer, sheet_name=f"Rolling_MA_{self.rolling_window}", index=False)
+        if self.raw_buffer:
+            self._append_df("Raw_Logs", pd.DataFrame(self.raw_buffer))
+            self.raw_buffer.clear()
 
-        # ---- Append RAW LOGS ----
-        if self.success_log_buffer:
-            existing = pd.read_excel(path, sheet_name="Raw_Logs")
-            new_df = pd.DataFrame(self.success_log_buffer)
-            combined = pd.concat([existing, new_df], ignore_index=True)
+        if self.rolling_ma_buffer:
+            self._append_df(
+                f"Rolling_MA_{self.rolling_window}",
+                pd.DataFrame(self.rolling_ma_buffer),
+            )
+            self.rolling_ma_buffer.clear()
 
-            with pd.ExcelWriter(path,
-                                mode="a",
-                                engine="openpyxl",
-                                if_sheet_exists="replace") as writer:
-                combined.to_excel(writer, sheet_name="Raw_Logs", index=False)
+        if self.summary_buffer:
+            self._append_df("Summary", pd.DataFrame(self.summary_buffer))
+            self.summary_buffer.clear()
 
-            self.success_log_buffer.clear()
-
-        # ---- Append ROLLING MA ----
-        if self.rolling_log_buffer:
-            sheet_name = f"Rolling_MA_{self.rolling_window}"
-            existing = pd.read_excel(path, sheet_name=sheet_name)
-            new_df = pd.DataFrame(self.rolling_log_buffer)
-            combined = pd.concat([existing, new_df], ignore_index=True)
-
-            with pd.ExcelWriter(path,
-                                mode="a",
-                                engine="openpyxl",
-                                if_sheet_exists="replace") as writer:
-                combined.to_excel(writer, sheet_name=sheet_name, index=False)
-
-            self.rolling_log_buffer.clear()
+    def close(self):
+        self.flush()

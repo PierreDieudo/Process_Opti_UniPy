@@ -241,7 +241,7 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
     e_eq_base = Process_param["Base_Plant_Primary_Emission"]+Process_param["Base_Plant_Secondary_Emission"] #base plant total emission in kgCO2/yr
     SPECCA = (q_eq_ccs)/(e_eq_base-(e_eq_ccs+Process_param["Base_Plant_Secondary_Emission"])) #MJ/kgCO2
     Economics = {
-        "Evaluation": float(Evaluation),
+        "Evaluation": Evaluation,
         "Purity": float(Process_specs["Purity"]),  # Purity of the product
         "Recovery": float(Process_specs["Recovery"]),  # Recovery of the product
         "TAC_CC": TAC_CC,  # Total Annualised Cost of Carbon Capture

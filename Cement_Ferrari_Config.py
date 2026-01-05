@@ -1,5 +1,4 @@
 
-import copy
 import numpy as np
 import pickle
 from Hub import Hub_Connector
@@ -58,8 +57,9 @@ elif Filename_input.lower() == "copy3":
 os.makedirs(checkpoint_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
 unisim_path = os.path.join(directory, filename)
-log_path = os.path.join(results_dir, f'Optimisation_Log_{Filename_input}.xlsx')
-logger = OptimisationLogger(results_dir)
+logger = OptimisationLogger(
+    log_dir=results_dir,
+)
 
 
 #-------------------------------#
@@ -74,7 +74,6 @@ else:
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    #"Recycling_Ratio" : [0.5, 1],  # Recycling ratio range for the process
     "Q_A_ratio_1" : [0.5, 20], # Flow/Area ratio for the second stage
     "P_up_1" : [1.3, 20],  # Upper pressure range for the second stage in bar
     "Q_A_ratio_2" : [1, 30], # Flow/Area ratio for the first stage"
@@ -225,7 +224,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             # Filter out trains with None or non-positive compressor duty
             valid_train_indices = [i for i, train in enumerate(Train_data) if train[0] is not None and train[0] > 0 and train[1] is not None and train[1] >0]
             if not valid_train_indices:
-                raise ValueError("No valid trains found with positive compressor duty.")
+                raise ConvergenceError("No valid trains found with positive compressor duty.")
         
             # Find the index of the train with the lowest compressor duty in Train_data
             lowest_duty_train_index = min(valid_train_indices, key=lambda i: Train_data[i][0])
@@ -482,7 +481,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     #-------------------------------#
 
     def Opti_algorithm():
-        checkpoint_file = "de_checkpoint_laptop_8param_211125.pkl" # Checkpoint file name
+        checkpoint_file = "de_checkpoint_desktop_8param_191225.pkl" # Checkpoint file name
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
         popsize = 20  # Population size multiplier
@@ -573,29 +572,23 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane_1["Temperature"] = params[-2] + 273.15
             Membrane_2["Temperature"] = params[-1] + 273.15
 
-            Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
+            Parameters = (
+                Membrane_1, Membrane_2,
+                Process_param, Component_properties,
+                Fibre_Dimensions, J
+            )
+
             Economics = Ferrari_Paper_Main(Parameters)
 
-            # Update total attempts
-            logger.attempted_run += 1
-
-            if isinstance(Economics, dict) and Economics["Recovery"] <= 1 and Economics["Purity"] <= 1 and Economics["SPECCA"] > 0 and Economics["Recovery"]>=0.025: #eliminating non-converged and non-physical solutions
-                # Successful run
-                logger.success += 1
-                evaluation_value = Economics["Evaluation"]
-
-                # Log the successful run
-                logger.log(params, Economics)
-            else:
-                # Failed run
-                logger.failed += 1
-                evaluation_value = 1e10
+            evaluation_value = logger.log(params, Economics)
 
             # Print progress every 100 evaluations
             if logger.attempted_run % 100 == 0:
                 success_percentage = logger.success / logger.attempted_run * 100
-                print(f"[{logger.attempted_run} Total Runs] Success: {logger.success} "
-                      f"({success_percentage:.1f}%), Failed: {logger.failed}")
+                print(f"[{logger.attempted_run} Total Runs] "
+                      f"Success: {logger.success} "
+                      f"({success_percentage:.1f}%), "
+                      f"Failed: {logger.failed}")
 
             return evaluation_value
 
@@ -639,12 +632,12 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         # ----------------- Extract solution -----------------
         def Solved_process():
-            Membrane_1["Q_A_ratio"] = result.x[-8]
-            Membrane_1["Pressure_Feed"] = result.x[-7]
-            Membrane_2["Q_A_ratio"] = result.x[-6]
-            Membrane_2["Pressure_Feed"] = result.x[-5]
-            Membrane_1["Pressure_Permeate"] = result.x[-4]
-            Membrane_2["Pressure_Permeate"] = result.x[-3]
+            Membrane_1["Q_A_ratio"] = result.x[0]
+            Membrane_1["Pressure_Feed"] = result.x[1]
+            Membrane_2["Q_A_ratio"] = result.x[2]
+            Membrane_2["Pressure_Feed"] = result.x[3]
+            Membrane_1["Pressure_Permeate"] = result.x[4]
+            Membrane_2["Pressure_Permeate"] = result.x[5]
             Membrane_1["Temperature"] = result.x[-2] + 273.15
             Membrane_2["Temperature"] = result.x[-1] + 273.15
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
@@ -674,7 +667,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         def format_economics(Economics):
             return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
-        filename = 'Ferrari_8param_261125.txt' # Output file name
+        filename = 'Ferrari_8param_191225.txt' # Output file name
         res_filepath = os.path.join(results_dir, filename)
         economics_str = format_economics(Economics)
         save_results(result, economics_str, res_filepath)
@@ -688,6 +681,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
 
     def Brute_Force():
+
 
         
         # In case of brute force
