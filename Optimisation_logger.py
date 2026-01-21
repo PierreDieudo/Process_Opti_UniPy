@@ -35,9 +35,9 @@ class OptimisationLogger:
     def __init__(
         self,
         log_dir,
-        log_interval=5,
-        rolling_window=5,
-        failure_penalty=1e10,
+        log_interval=100,
+        rolling_window=100,
+        failure_penalty=1e9,
         min_recovery=0.025,
     ):
         # Directory only — filename is auto-generated
@@ -153,7 +153,6 @@ class OptimisationLogger:
 
         # ---------- Successful run ----------
         self.success += 1
-        print(f"Successful evaluation #{self.attempted_run}")
         raw_entry = {"Run": self.attempted_run}
         for i, v in enumerate(params):
             raw_entry[f"Param_{i+1}"] = v
@@ -177,20 +176,14 @@ class OptimisationLogger:
 
         self.rolling_ma_buffer.append(rolling_entry)
 
-        ######### PRINTING FOR DEBUGGING #########
-        print(raw_entry)
-        print(self.raw_buffer)
-        print(f'number of entries in raw buffer = {len(self.raw_buffer)}')
-        print()
         if len(self.raw_buffer) >= self.log_interval:
-            print('TRIGGER FLUSH')
             self.flush()
 
         self._update_summary()
         return Economics["Evaluation"]
 
     def _update_summary(self):
-        if self.attempted_run % 10 == 0:
+        if self.attempted_run % 250 == 0:
             self.summary_buffer.append({
                 "Total Evaluations": self.attempted_run,
                 "Successful Evaluations": self.success,
@@ -231,11 +224,6 @@ class OptimisationLogger:
 
     def flush(self):
 
-
-        print("FLUSH CALLED",
-          "raw:", len(self.raw_buffer),
-          "ma:", len(self.rolling_ma_buffer),
-          "summary:", len(self.summary_buffer))
 
         if self.raw_buffer:
             self._append_df("Raw_Logs", pd.DataFrame(self.raw_buffer))

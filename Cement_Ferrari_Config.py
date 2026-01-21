@@ -71,19 +71,20 @@ if Method == "Both":
 else:
    print(f"Running the {Method} method for path {filename}")
 
+Options = { "Permeance_From_Activation_Energy": False}    # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
+print(f'Permeance from Activation Energy: {Options["Permeance_From_Activation_Energy"]}') 
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [0.5, 20], # Flow/Area ratio for the second stage
-    "P_up_1" : [1.3, 20],  # Upper pressure range for the second stage in bar
-    "Q_A_ratio_2" : [1, 30], # Flow/Area ratio for the first stage"
-    "P_up_2" : [1.3, 20],  # Upper pressure range for the first stage in bar
-    "P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
-    "P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
-    "Temperature_1" : [-40, 70],  # Temperature range in Celcius
-    "Temperature_2" : [-40, 70],  # Temperature range in Celcius
+    "Q_A_ratio_1" : [0.5, 15], # Flow/Area ratio for the second stage
+    "Q_A_ratio_2" : [1, 20], # Flow/Area ratio for the first stage
+    "P_up_1" : [1.3, 15],  # Upper pressure range for the second stage in bar
+    "P_up_2" : [1.3, 15],  # Upper pressure range for the first stage in bar
+    #"P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
+    #"P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
+    #"Temperature_1" : [-40, 70],  # Temperature range in Celcius
+    #"Temperature_2" : [-40, 70],  # Temperature range in Celcius
     }
-
 
 #--------------------------#
 #--- Default Parameters ---#
@@ -93,22 +94,22 @@ Opti_Param = {
 Membrane_1 = {
     "Name": 'Membrane_1',
     "Solving_Method": 'CC_ODE',                 # 'CC' or 'CO' - CC is for counter-current, CO is for co-current
-    "Temperature": 35+273.15,               # Kelvin
+    "Temperature": 25+273.15,               # Kelvin
     "Pressure_Feed": 5.80,                  # bar
-    "Pressure_Permeate": 1,                 # bar
+    "Pressure_Permeate": 0.22,                 # bar
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
-    "Permeance": [360, 13, 60, 360],        # GPU at 35C  - aged - https://doi.org/10.1016/j.memsci.2017.02.012
+    "Permeance": [1000, 1000/50, 1000/20, 1000], # in GPU [CO2, N2, O2, H2O]
     "Pressure_Drop": False,
     }
 
 Membrane_2 = {
     "Name": 'Membrane_2',
     "Solving_Method": 'CC_ODE',                   
-    "Temperature": 35+273.15,                   
+    "Temperature": 25+273.15,                   
     "Pressure_Feed": 4,                       
-    "Pressure_Permeate": 1,                  
+    "Pressure_Permeate": 0.22,                  
     "Q_A_ratio": 8,                          
-    "Permeance": [360, 13, 60, 360],        
+    "Permeance": [1000, 1000/50, 1000/20, 1000], 
     "Pressure_Drop": False,
     }
 
@@ -134,8 +135,8 @@ Component_properties = {
     }
 
 Fibre_Dimensions = {
-"D_in" : 150 * 1e-6,    # Inner diameter in m (from um)
-"D_out" : 300 * 1e-6,   # Outer diameter in m (from um)
+"D_in" : 600 * 1e-6,    # Inner diameter in m (from um)
+"D_out" : 800 * 1e-6,   # Outer diameter in m (from um)
 }
   
 J = len(Membrane_1["Permeance"]) #number of components
@@ -258,9 +259,9 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
             J = len(Membrane["Permeance"]) #number of components
             
-            # Obtain Permeance with temperature:
-            for i in range(J):
-                Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
+            if Options["Permeance_From_Activation_Energy"]: # Obtain Permeance with temperature:
+                for i in range(J):
+                    Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
 
             results, profile = Hub_Connector(Export_to_mass_balance)
             Membrane["Retentate_Composition"],Membrane["Permeate_Composition"],Membrane["Retentate_Flow"],Membrane["Permeate_Flow"] = results
@@ -307,8 +308,10 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         for j in range(max_iter):
 
-            Mem_Train_Choice(Membrane_1) # Get the correct membrane compression train for Membrane 1
+            unisim.wait_solution(timeout=10, check_pop_ups=2, check_consistency_error=3)
+
             try:
+                Mem_Train_Choice(Membrane_1) # Get the correct membrane compression train for Membrane 1
                 results_1 , profile_1 = Run(Membrane_1) # Run the first membrane
             except ConvergenceError:
                 return 5e8
@@ -316,10 +319,11 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             for i in range(J): #results "[0]: x", "[1]: y", "[2]: Q_ret", "[3]: Q_perm"
                 Membrane1.set_cell_value(f'D{i+14}', results_1[1][i] * results_1[3] * 3.6) # convert from mol/s to kmol/h and send to unisim
                 Membrane1.set_cell_value(f'D{i+21}', results_1[0][i] * results_1[2] * 3.6)
-
-            Mem_Train_Choice(Membrane_2) # Get the correct membrane compression train for Membrane 2
             
+            unisim.wait_solution(timeout=10, check_pop_ups=2, check_consistency_error=3)
+
             try: 
+                Mem_Train_Choice(Membrane_2) # Get the correct membrane compression train for Membrane 2
                 results_2, profile_2 = Run(Membrane_2) # Run the second membrane
             except ConvergenceError:
                 return 5e8
@@ -341,7 +345,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Placeholder_1["Feed_Flow"] = Membrane_1["Feed_Flow"]
 
         
-            unisim.wait_solution()
+            unisim.wait_solution(timeout=10, check_pop_ups=2, check_consistency_error=3)
 
 
         else: 
@@ -369,15 +373,25 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 return lowest_duty_train
 
             def gather_train_data(start_row):
-                return [
-                    [
-                        Duties.get_cell_value(f'H{i+start_row}'),  # Compressor Duty (kW)
-                        Duties.get_cell_value(f'I{i+start_row}'),  # Hex Area (m2)
-                        Duties.get_cell_value(f'J{i+start_row}'),  # Water Flowrate (kg/hr)
-                        Duties.get_cell_value(f'K{i+start_row}') / 1e6 if Duties.get_cell_value(f'K{i+start_row}') is not None and Duties.get_cell_value(f'K{i+start_row}') > 0 else 0  # Cryogenic Cooler Duty (MJ/hr)
-                    ]
-                    for i in range(3)
-                ]
+                data = []
+                for i in range(3):
+                    k_val = Duties.get_cell_value(f'K{i + start_row}')
+
+                    cryo = 0
+                    if k_val is not None:
+                        try:
+                            cryo = (k_val / 1e6) if k_val > 0 else 0
+                        except TypeError:
+                            v = float(k_val)  # if needed
+                            cryo = (v / 1e6) if v > 0 else 0
+
+                    data.append([
+                        Duties.get_cell_value(f'H{i + start_row}'),
+                        Duties.get_cell_value(f'I{i + start_row}'),
+                        Duties.get_cell_value(f'J{i + start_row}'),
+                        cryo
+                    ])
+                return data
 
 
             Train1 = gather_train_data(9)
@@ -481,7 +495,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     #-------------------------------#
 
     def Opti_algorithm():
-        checkpoint_file = "de_checkpoint_desktop_8param_191225.pkl" # Checkpoint file name
+        checkpoint_file = "de_checkpoint_desktop_5param_ferrari_forchiara_mem2_160126.pkl" # Checkpoint file name
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
         popsize = 20  # Population size multiplier
@@ -531,7 +545,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([9.11362129, 13.40702624, 3.71798611, 4.59653773, -9.26197132, -34.23333671])
+                first_guess = np.array([3.8,1.8,9,1.3])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
@@ -551,26 +565,26 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # ----------------- Define bounds -----------------
         bounds = [  
             Opti_Param["Q_A_ratio_1"],  
-            Opti_Param["P_up_1"],  
             Opti_Param["Q_A_ratio_2"],  
+            Opti_Param["P_up_1"],  
             Opti_Param["P_up_2"],  
-            Opti_Param["P_perm_1"],
-            Opti_Param["P_perm_2"],
-            Opti_Param["Temperature_1"],  
-            Opti_Param["Temperature_2"],  
+            #Opti_Param["P_perm_1"],
+            #Opti_Param["P_perm_2"],
+            #Opti_Param["Temperature_1"],  
+            #Opti_Param["Temperature_2"],  
         ]
         
         # ----------------- Objective function -----------------
         def objective_function(params):
             # Update Membrane parameters
             Membrane_1["Q_A_ratio"] = params[0]
-            Membrane_1["Pressure_Feed"] = params[1]
-            Membrane_2["Q_A_ratio"] = params[2]
+            Membrane_2["Q_A_ratio"] = params[1]
+            Membrane_1["Pressure_Feed"] = params[2]
             Membrane_2["Pressure_Feed"] = params[3]
-            Membrane_1["Pressure_Permeate"] = params[4]
-            Membrane_2["Pressure_Permeate"] = params[5]
-            Membrane_1["Temperature"] = params[-2] + 273.15
-            Membrane_2["Temperature"] = params[-1] + 273.15
+            #Membrane_1["Pressure_Permeate"] = params[4]
+            #Membrane_2["Pressure_Permeate"] = params[5]
+            #Membrane_1["Temperature"] = params[-2] + 273.15
+            #Membrane_2["Temperature"] = params[-1] + 273.15
 
             Parameters = (
                 Membrane_1, Membrane_2,
@@ -581,15 +595,14 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Economics = Ferrari_Paper_Main(Parameters)
 
             evaluation_value = logger.log(params, Economics)
-
-            # Print progress every 100 evaluations
-            if logger.attempted_run % 100 == 0:
+            
+            # Print progress every 200 evaluations
+            if logger.attempted_run % 200 == 0:
                 success_percentage = logger.success / logger.attempted_run * 100
                 print(f"[{logger.attempted_run} Total Runs] "
                       f"Success: {logger.success} "
                       f"({success_percentage:.1f}%), "
                       f"Failed: {logger.failed}")
-
             return evaluation_value
 
         # ----------------- Callback with checkpoint save -----------------
@@ -633,13 +646,13 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # ----------------- Extract solution -----------------
         def Solved_process():
             Membrane_1["Q_A_ratio"] = result.x[0]
-            Membrane_1["Pressure_Feed"] = result.x[1]
-            Membrane_2["Q_A_ratio"] = result.x[2]
+            Membrane_2["Q_A_ratio"] = result.x[1]
+            Membrane_1["Pressure_Feed"] = result.x[2]
             Membrane_2["Pressure_Feed"] = result.x[3]
-            Membrane_1["Pressure_Permeate"] = result.x[4]
-            Membrane_2["Pressure_Permeate"] = result.x[5]
-            Membrane_1["Temperature"] = result.x[-2] + 273.15
-            Membrane_2["Temperature"] = result.x[-1] + 273.15
+            #Membrane_1["Pressure_Permeate"] = result.x[4]
+            #Membrane_2["Pressure_Permeate"] = result.x[5]
+            #Membrane_1["Temperature"] = result.x[-2] + 273.15
+            #Membrane_2["Temperature"] = result.x[-1] + 273.15
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
             Economics = Ferrari_Paper_Main(Parameters)
 
@@ -667,7 +680,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         def format_economics(Economics):
             return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
-        filename = 'Ferrari_8param_191225.txt' # Output file name
+        filename = 'Ferrari_5param_ferrari_forchiara_mem2_160126.txt' # Output file name
         res_filepath = os.path.join(results_dir, filename)
         economics_str = format_economics(Economics)
         save_results(result, economics_str, res_filepath)

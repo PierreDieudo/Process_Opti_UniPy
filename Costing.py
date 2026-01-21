@@ -198,7 +198,7 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
     TAC_Cryo *= Index_2014/Index_2017 #convert to 2014 money
 
     TAC_Dehydration = Process_specs["Dehydration"] * 1e-3 * Dehydration_Cost * Process_param["Operating_hours"] # ($2018/yr) cost of removing N tons of H2O from compression train at 30 bar per year.
-    TAC_Cryo *= Index_2014/Index_2018 #convert to 2014 money
+    TAC_Dehydration *= Index_2014/Index_2018 #convert to 2014 money
 
     TAC_other = TAC_Cryo + TAC_Dehydration
 

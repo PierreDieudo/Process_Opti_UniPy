@@ -17,7 +17,7 @@ def mass_balance_CC_ODE(vars):
     
     #Number of elements N
     J = len(Membrane["Feed_Composition"])
-    min_elements = [3]  # minimum of 3 elements
+    min_elements = [100]  # minimum of 100 elements
     for i in range(J):  # (Coker and Freeman, 1998)
         N_i = (Membrane["Area"] * (1 - Membrane["Feed_Composition"][i] + 0.005) * Membrane["Permeance"][i] * Membrane["Pressure_Feed"] * Membrane["Feed_Composition"][i]) / (Membrane["Feed_Flow"] * 0.005)
         min_elements.append(N_i)
@@ -25,6 +25,52 @@ def mass_balance_CC_ODE(vars):
      
     Membrane["Feed_Composition"] = np.array(Membrane["Feed_Composition"])
     Membrane["Sweep_Composition"] = np.array(Membrane["Sweep_Composition"])
+   
+   
+    '''----------------------------------------------------------###
+    ###------------- Mixture Viscosity Calculation --------------###
+    ###----------------------------------------------------------'''
+
+    def mixture_visc(composition): #Calculate the viscosity of a mixture using Wilke's method
+
+        y = composition # mole fractions
+    
+        visc = np.zeros(J)
+        for i, (slope, intercept) in enumerate(Component_properties["Viscosity_param"]):
+            visc[i] = 1e-6*(slope * Membrane["Temperature"] + intercept)  # Viscosity of pure component - in Pa.s
+
+        Mw = Component_properties["Molar_mass"]  # Molar mass of component in kg/kmol
+
+        phi = np.zeros((J, J))
+        for i in range(J):
+            for j in range(J):
+                if i != j:
+                    phi[i][j] = ( ( 1 + ( visc[i]/visc[j] )**0.5 * ( Mw[j]/Mw[i] )**0.25 ) **2 ) / ( ( 8 * ( 1 + Mw[i]/Mw[j] ) )**0.5 ) 
+                else:
+                    phi[i][j] = 1
+
+        nu=np.zeros(J)
+        for i in range(J):
+            nu[i] = y[i] * visc [i] / sum(y[i] * phi[i][j] for j in range(J))
+    
+        visc_mix = sum(nu) # Viscosity of the mixture in Pa.s
+        return visc_mix
+
+    '''----------------------------------------------------------###
+    ###--------------- Pressure Drop Calculation ----------------###
+    ###----------------------------------------------------------'''
+
+    def pressure_drop(composition, Q, P): #change in pressure across the element - Hagen Poiseuille equation
+
+        visc_mix = mixture_visc(composition)                                                # Viscosity of the mixture in Pa.s
+        D_in = Fibre_Dimensions["D_in"]                                                     # Inner diameter in m
+        Q = Q/Fibre_Dimensions['Number_Fibre']                                              # Flowrate in fibre in mol/s
+        R = 8.314                                                                           # J/(mol.K) - gas constant
+        nu = (Q * R * Membrane["Temperature"])/P                                            # volumetric flowrate in m3/s
+
+        dP_dz = (128 * visc_mix) / (math.pi * D_in**4 * P ) * nu    # Pressure drop in Pa across the element per unit length
+        return dP_dz
+
 
     '''---------------------------------------------------------------###
     ###---------- Non discretised solution for initial guess ----------###
@@ -97,73 +143,55 @@ def mass_balance_CC_ODE(vars):
             ftol=1e-6   
             )
 
-
         return approx_sol
 
 
     def mass_balance_reverse(vars):
-
         J = len(Membrane["Feed_Composition"])
 
         def membrane_odes(z, var, params):
             Membrane, Component_properties, Fibre_Dimensions = params
             J = len(Membrane["Feed_Composition"])
 
-
-            # Unpack variables
-            '''
-            U_r_x = var[:J]  # Retentate composition flows
-            U_p_y = var[J:2*J]  # Permeate composition flows
-        
-            U_r = sum(U_r_x)
-            U_p = sum(U_p_y)
-
-            x = U_r_x / U_r
-            y = U_p_y / U_p if U_p != 0 else np.zeros_like(U_p_y)
-            '''
             epsilon = 1e-8
             # Define the ODEs for each component
             dx_dz = np.zeros(J)
             dy_dz = np.zeros(J)
- 
+            P_perm = var[-1]  # Permeate pressure
+            
             for i in range(J):
-                dx_dz[i] = 1/Membrane["Total_Flow"] * ( - Membrane["Permeance"][i] * (Fibre_Dimensions["D_out"] * math.pi * Fibre_Dimensions["Number_Fibre"]) * (Membrane["Pressure_Feed"] * var[i]/(sum(var[:J])+epsilon) - Membrane["Pressure_Permeate"] * var[J+i]/(sum(var[J:2*J])+epsilon)) ) # change in component flow in retentate is negative of permeation
+                dx_dz[i] = 1/Membrane["Total_Flow"] * ( - Membrane["Permeance"][i] * (Fibre_Dimensions["D_out"] * math.pi * Fibre_Dimensions["Number_Fibre"]) * (Membrane["Pressure_Feed"] * var[i]/(sum(var[:J])+epsilon) - P_perm * var[J+i]/(sum(var[J:2*J])+epsilon)) ) # change in component flow in retentate is negative of permeation
                 dy_dz[i] = - dx_dz[i]
-        
-
-            return np.concatenate((dx_dz, dy_dz))
-
+                
+            if Membrane["Pressure_Drop"]:     
+                composition = var[:J] / sum(var[:J])
+                Q = sum(var[:J])
+                dP_dz = -pressure_drop(composition, Q, var[-1])
+            else: 
+                dP_dz = 0
+            
+            return np.concatenate((dx_dz, dy_dz, [dP_dz]))
 
         # Initial conditions
-        U_x_0 = vars #input retentate guess for the shooting method 
-        U_y_0 = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
+        U_x_L = vars[:J] #input retentate guess for the shooting method
+        P_y_L = vars[-1] if Membrane["Pressure_Drop"] else Membrane["Pressure_Permeate"]
+        U_y_L = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
 
-        boundary = np.concatenate((U_x_0, U_y_0))
-
+        boundary = np.concatenate((U_x_L, U_y_L, [P_y_L]))
         params = (Membrane, Component_properties, Fibre_Dimensions)
     
         t_span = [Fibre_Dimensions['Length'], 0]
         t_eval = np.linspace(t_span[0], t_span[1], max(250,n_elements))
 
-        #solution = solve_ivp(membrane_odes, t_span, y0 = boundary, args=(params,), method='BDF', t_eval=t_eval)
-        solution = solve_ivp(lambda z, var: membrane_odes(z, var, params), t_span, y0 = boundary, method='BDF', t_eval=t_eval)
-
-        '''
-        z_points = solution.t
-        U_x_profile = solution.y[:J, :]
-        U_y_profile = solution.y[J:2*J, :]
-
-        # Composition Profiles
-        x_profiles = U_x_profile / np.sum(U_x_profile, axis=0)
-        y_profiles = U_y_profile / (np.sum(U_y_profile, axis=0) + epsilon)
-    
-        # Final Results
-        final_Fx = solution.y[:J, -1]
-        final_Fy = solution.y[J:2*J, -1]
-        '''
+        solution = solve_ivp(
+            lambda z, var: membrane_odes(z, var, params),
+            t_span,
+            y0 = boundary,
+            method='BDF',
+            t_eval=t_eval,
+            )
 
         return solution
-
 
     '''----------------------------------------------------------###
     ###---------- Shooting Method for Overall Solution ----------###
@@ -172,51 +200,73 @@ def mass_balance_CC_ODE(vars):
     def shooting_method():
 
         J = len(Membrane["Feed_Composition"])
-        
+    
         approx_solution = approx_shooting_guess()
+
         approx_guess = approx_solution.x[0:J].tolist() + [approx_solution.x[-2]] #guess for the retentate composition and normalised flowrate at element 1
         approx_guess = [comp * approx_guess[-1] for comp in approx_guess[0:J]]
 
+        if Membrane["Pressure_Drop"]:
+            approx_guess = approx_guess + [0.95] #guess for permeate pressure at feed entry, knowing that P_sweep = pP/guess
 
         def module_shooting_error(vars):
 
-
             guess_solution = mass_balance_reverse(vars)
+
             guess_Fx_N = guess_solution.y[:J,-1]
 
             true_Fx_N = [comp * Membrane["Feed_Flow"]/Membrane["Total_Flow"] for comp in Membrane["Feed_Composition"]]
 
             error_Fy = [abs(guess_Fx_N[i]-true_Fx_N[i]) for i in range(J)]
- 
+
             shooting_error = error_Fy
 
             return shooting_error
 
         #least_squares function to solve the overall mass balance
+        bounds = (0, 1) 
+
         overall_sol = least_squares(
             module_shooting_error,
             approx_guess,
             method='dogbox',
-            bounds=(0,1),
+            bounds=bounds,
             xtol=1e-8,
             ftol=1e-8,
         )
     
         #if overall_sol.cost > 1e-5: 
-            #print(f'Large mass balance closure error for shooting solution: {overall_sol.cost:.3e}')
+         #   print(f'Large mass balance closure error for shooting solution: {overall_sol.cost:.3e}')
 
         solution = mass_balance_reverse(overall_sol.x)
 
         z_points = solution.t
         z_points_norm = z_points / np.max(z_points)    
         U_x_profile = solution.y[:J, :]
-        U_y_profile = -solution.y[J:2*J, :]
+        U_y_profile = solution.y[J:2*J, :]
 
         # Calculate the compositions and flows
         x_profiles = U_x_profile / np.sum(U_x_profile, axis=0)
         y_profiles = U_y_profile / (np.sum(U_y_profile, axis=0) + epsilon)
         Qr_profile = np.sum(U_x_profile, axis=0)
-        Qp_profile = np.sum(U_y_profile, axis=0)
+        Qp_profile = -np.sum(U_y_profile, axis=0)
+
+      
+
+        if Membrane["Pressure_Drop"]:
+            print(f"Total pressure drop = {1e-5 * (solution.y[-1, -1]):.3f} bar")
+            P_profile = solution.y[-1, :]
+
+
+        '''
+            # Plot pressure profile
+            plt.figure(figsize=(8,6))
+            plt.plot(z_points_norm, P_profile)
+            plt.xlabel('Normalized Length')
+            plt.ylabel('Pressure (Pa)')
+            plt.title('Pressure Drop Profile Along the Membrane')
+            plt.show()
+        '''
 
         data = {
             "norm_z": z_points_norm,
