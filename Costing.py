@@ -222,9 +222,9 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
     Equiv_Emission = Primary_emission + Secondary_Emission
     Penalty_CO2_emission = Equiv_Emission * Carbon_Tax #eur/yr 
     
-    #Extra_Penalty = 1e10 * (0.90 - Process_specs["Recovery"]) if (0.90 - Process_specs["Recovery"]) > 0 else 0 # Extra penalty for recovery under 90% 
+    Extra_Penalty = 5e11 * (0.90 - Process_specs["Recovery"]) if (0.90 - Process_specs["Recovery"]) > 0 else 0 # Extra penalty for recovery under 90% 
 
-    Penalty = Penalty_purity + Penalty_CO2_emission #+ Extra_Penalty # Total penalty for purity and CO2 emissions
+    Penalty = Penalty_purity + Penalty_CO2_emission + Extra_Penalty # Total penalty for purity and CO2 emissions
 
     ### Estimate cost of carbon capture process as a TAC
     TAC_CC = TPC/Process_param["Lifetime"] + Total_Opex + TAC_other
