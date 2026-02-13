@@ -47,7 +47,7 @@ Project Contingency / Fixed Opex factors
 '''
 
 
-def Costing(Process_specs, Process_param, Comp_properties): #process specs is dictionary with mem1, mem2, Pre_cond1, Pre_cond2, Compressor_train, Process_param
+def Costing(Process_specs, Process_param, Comp_properties, Options): #process specs is dictionary with mem1, mem2, Pre_cond1, Pre_cond2, Compressor_train, Process_param
 
     ''' Constants'''
     Compressor_param = [490000,16800,0.6] # Sinnott - purchased equipment cost on a U.S. Gulf Coast basis, Jan. 2007 (CE index (CEPCI) = 509.7, NF refinery inflation index = 2059.1)
@@ -98,13 +98,13 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
 
     C_compressor = 0 # Total installed cost of compressors
     for train in Process_specs["Compressor_trains"]:
-        C_compressor += (train[1]) * cost_sinnott(Compressor_param, train[0]/train[1]) if train[0] > 0 else 0 # Compressor trains data is a list of [duty, number_of_compressors] pairs
+        C_compressor += (train[1]) * cost_sinnott(Compressor_param, train[0]/train[1]) # Compressor trains data is a list of [duty, number_of_compressors] pairs
     C_compressor *= Compressor_IF # Installed cost of compressors
     #print(f'Compressor Capex: {C_compressor/1e6:.0f} million euros')
     
     C_vacuum_pump = 0 # installed cost of vacuum pump - same costing than compressor
     for train in Process_specs["Vacuum_Pump"]:
-        C_vacuum_pump += cost_sinnott(Compressor_param, train[0]) if train[0] > 0 else 0
+        C_vacuum_pump += cost_sinnott(Compressor_param, train)
     C_vacuum_pump *= Compressor_IF # Installed cost of compressors
 
     if Process_specs["Vacuum_Cooling"]: # If vacuum pump exhaust temperature is over 35 C, then need a cooler before next set of compressors.
@@ -115,7 +115,7 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
 
     C_cooler = 0 # Total installed cost of coolers
     for train in Process_specs["Cooler_trains"]:
-        C_cooler += (train[2]) * cost_sinnott(Cooler_param, train[0]/train[2]) if train[0] > 0 else 0
+        C_cooler += (train[2]) * cost_sinnott(Cooler_param, train[0]/train[2])
     C_cooler *= HEx_IF # Installed cost of coolers
     #print(f'Cooler Capex: {C_cooler/1e6:.0f} million euros')
 
@@ -150,7 +150,7 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
        
     O_vacuum_pump = 0
     for train in Process_specs["Vacuum_Pump"]:
-        O_vacuum_pump += train[0] * Process_param["Operating_hours"] * Electricity_cost
+        O_vacuum_pump += train * Process_param["Operating_hours"] * Electricity_cost
     Power_Consumption += O_vacuum_pump / Electricity_cost
 
     if Process_specs["Vacuum_Cooling"]: # If vacuum pump exhaust temperature is over 35 C, then need a cooler before next set of compressors.
@@ -202,9 +202,55 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
 
     TAC_other = TAC_Cryo + TAC_Dehydration
 
+    '''-----------------------------------#
+    #-------------- Penalty --------------#
+    #-----------------------------------'''
+
     ### Penalty evaluation for Purity ###
-    Penalty_purity = 5e11 * (Process_param["Target_Purity"] - Process_specs["Purity"]) if (Process_param["Target_Purity"] - Process_specs["Purity"]) > 0 else 0 
+    Penalty_purity = 5e10 * (Process_param["Target_Purity"] - Process_specs["Purity"]) if (Process_param["Target_Purity"] - Process_specs["Purity"]) > 0 else 0 
     
+    if Options["Purity_Hard_Cap"]: #if purity hard cap is active
+        Purity_diff = Process_param["Target_Purity"] - Process_specs["Purity"]
+        Penalty_purity = 5e9 * abs(Purity_diff) if Purity_diff < 0.005 or Purity_diff > 0 else 0 #leave some tolerance of 0.5% above target purity
+
+
+    ### Penalty for CO2 emissions ###
+    Primary_emission = (1- Process_specs["Recovery"]) * Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] #(mol/s) CO2 emissions from the process
+    
+    Primary_emission *= Process_param["Operating_hours"] * 3600 # convert to mol/yr
+    Primary_emission *= 44.01 * 1e-6 # convert to tonnes/yr (44.01 g/mol)    
+    
+    Secondary_Emission = Power_Consumption * Indirect_Emission_rate # (tonnes/yr) CO2 emissions from electricity consumption
+    Equiv_Emission = Primary_emission + Secondary_Emission
+    
+    if Options["Recovery_Soft_Cap"][0]: #if recovery soft cap is active
+        if Options["Recovery_Soft_Cap"][1] <= Process_specs["Recovery"]: #if recovery is above the soft cap - remove the primary emissions (i.e., no incentive to recover further)
+            Equiv_Emission = Secondary_Emission
+    
+    Penalty_CO2_emission = Equiv_Emission * Carbon_Tax #eur/yr 
+    
+    if Options["Extra_Recovery_Penalty"] and (Options["Recovery_Soft_Cap"][1] > Process_specs["Recovery"]) > 0: # Extra penalty for recovery under 90% to encourage high recovery rates
+        Extra_Penalty = 5e10 * (0.90 - Process_specs["Recovery"])
+    else : Extra_Penalty = 0
+
+    Penalty = Penalty_purity + Penalty_CO2_emission + Extra_Penalty # Total penalty for purity and CO2 emissions
+
+
+    '''------------------------'''
+
+    ### Estimate cost of carbon capture process as a TAC
+    TAC_CC = TPC/Process_param["Lifetime"] + Total_Opex + TAC_other
+
+    ### Evaluation ###
+    Evaluation = TAC_CC + Penalty
+
+    ### Cost of Capture ###
+    Total_Captured= Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] * Process_param["Operating_hours"] * 3600 * Process_specs["Recovery"] * Comp_properties["Molar_mass"][0] * 1e-6 # Total CO2 captured in tonnes per year
+
+    Cost_of_Avoidance = TAC_CC / ( Total_Captured - Secondary_Emission) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
+    Cost_of_Capture = TAC_CC / ( Total_Captured - Secondary_Emission) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
+
+
     ### Emissions due to cryognenic systems:
     Cryo_Energy = 0
     for Cryo in Process_specs["Cryogenics"]:
@@ -214,30 +260,9 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
 
     Power_Consumption += Cryo_Energy
 
-    ### Penalty for CO2 emissions ###
-    Primary_emission = (1- Process_specs["Recovery"]) * Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] #(mol/s) CO2 emissions from the process
-    Primary_emission *= Process_param["Operating_hours"] * 3600 # convert to mol/yr
-    Primary_emission *= 44.01 * 1e-6 # convert to tonnes/yr (44.01 g/mol)
-    Secondary_Emission = Power_Consumption * Indirect_Emission_rate # (tonnes/yr) CO2 emissions from electricity consumption
-    Equiv_Emission = Primary_emission + Secondary_Emission
-    Penalty_CO2_emission = Equiv_Emission * Carbon_Tax #eur/yr 
-    
-    Extra_Penalty = 5e11 * (0.90 - Process_specs["Recovery"]) if (0.90 - Process_specs["Recovery"]) > 0 else 0 # Extra penalty for recovery under 90% 
-
-    Penalty = Penalty_purity + Penalty_CO2_emission + Extra_Penalty # Total penalty for purity and CO2 emissions
-
-    ### Estimate cost of carbon capture process as a TAC
-    TAC_CC = TPC/Process_param["Lifetime"] + Total_Opex + TAC_other
-
-    ### Evaluation ###
-    Evaluation = TAC_CC + Penalty
-
-    ### Cost of Capture ###
-    Cost_of_Capture = TAC_CC / ( Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] * Process_param["Operating_hours"] * 3600 * Process_specs["Recovery"] * Comp_properties["Molar_mass"][0] * 1e-6 ) #TAC / (CO2 in feed [mol/s] * 3600 [s/hr] * 8000 [hr/yr] * Recovery * 44 [g/mol] * 1e-6 [tn/g]) = eur per tonne of CO2 captured
-
     ### Specific Primary Energy Consumption for CO2 Avoided ###
     q_eq_ccs = Power_Consumption*3.6/Electrivity_Generation_Efficiency #primary consumption of the CCS plant (in MJ/yr)
-    e_eq_ccs = Equiv_Emission * 1000 #kgco2/yr
+    e_eq_ccs = (Primary_emission + Secondary_Emission) * 1000 #kgco2/yr
     e_eq_base = Process_param["Base_Plant_Primary_Emission"]+Process_param["Base_Plant_Secondary_Emission"] #base plant total emission in kgCO2/yr
     SPECCA = (q_eq_ccs)/(e_eq_base-(e_eq_ccs+Process_param["Base_Plant_Secondary_Emission"])) #MJ/kgCO2
     Economics = {
@@ -271,6 +296,7 @@ def Costing(Process_specs, Process_param, Comp_properties): #process specs is di
         "Penalty_CO2_emission": Penalty_CO2_emission,  # Penalty for CO2 emissions under target
         "Power_Consumption": Power_Consumption,  # Power consumption in kWhe/yr
         "Cost_of_Capture": Cost_of_Capture,
+        "Cost_of_Avoidance": Cost_of_Avoidance,
         "SPECCA": SPECCA,
 
         }

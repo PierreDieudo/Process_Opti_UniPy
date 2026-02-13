@@ -37,7 +37,7 @@ class OptimisationLogger:
         log_dir,
         log_interval=100,
         rolling_window=100,
-        failure_penalty=1e9,
+        failure_penalty=5e9,
         min_recovery=0.025,
     ):
         # Directory only — filename is auto-generated

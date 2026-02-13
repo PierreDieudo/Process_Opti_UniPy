@@ -59,34 +59,43 @@ logger = OptimisationLogger(
     log_dir=results_dir,
 )
 
+checkpoint_file = "de_checkpoint_desktop_CRMC3_9params_090226.pkl" # Checkpoint file name
+output_filename = 'CRMC3_desktop_9param_090226.txt'
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
 #-------------------------------#
-Method = "Optimisation" # Method is either by Brute_Force or Optimisation or Both
-if Method == "Both":
-   print(f"Using software path: {filename}; Running both Bruteforce and Optimisation methods")
-else:
-   print(f"Running the {Method} method for path {filename}")
+
+Options = { 
+    "Method": "Optimisation",  # Method is either by Brute_Force or Optimisation or Both
+    "Permeance_From_Activation_Energy": True, # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
+    "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
+    "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
+    "Purity_Hard_Cap": False,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
+    }    
+
+print(Options) 
+if Options["Method"] == "Both":print(f"Using software path: {filename}; Running both Bruteforce and Optimisation methods") 
+else: print(f"Running the { Options["Method"]} method for path {filename}")
 
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [1, 30], # Flow/Area ratio
+    "Q_A_ratio_1" : [1, 15], # Flow/Area ratio
     "Q_A_ratio_2" : [0.5, 10],  
-    "Q_A_ratio_3" : [2, 50], 
+    "Q_A_ratio_3" : [2, 20], 
 
-    "P_up_1" : [2, 15],  # Feed pressure range  in bar    
-    "P_up_2" : [2, 15],  
-    "P_up_3" : [2, 15], 
+    "P_up_1" : [1, 10],  # Feed pressure range  in bar    
+    "P_up_2" : [1, 10],  
+    "P_up_3" : [1, 10], 
 
     #"P_perm_1" : [0.22, 1], # Permeate pressure range in bar
     #"P_perm_2" : [0.22, 1], 
     #"P_perm_3" : [0.22, 1], 
 
-    "Temperature_1" : [-40, 80],  # Temperature range in Celcius
-    "Temperature_2" : [-40, 80],  
-    "Temperature_3" : [-40, 80], 
+    "Temperature_1" : [-40, 40],  # Temperature range in Celcius
+    "Temperature_2" : [-40, 40],  
+    "Temperature_3" : [-40, 40], 
 }
 
 
@@ -97,9 +106,9 @@ Opti_Param = {
 Membrane_1 = {
     "Name": 'Membrane_1',
     "Solving_Method": 'CC_ODE',                 # 'CC' or 'CO' - CC is for counter-current, CO is for co-current
-    "Temperature": -13.10+273.15,               # Kelvin
+    "Temperature": 25+273.15,               # Kelvin
     "Pressure_Feed": 4.2630,                  # bar
-    "Pressure_Permeate": 0.2340,                 # bar
+    "Pressure_Permeate": 0.22,                 # bar
     "Q_A_ratio": 3.7170,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [360, 13, 60, 360],        # GPU
     "Pressure_Drop": False,
@@ -108,9 +117,9 @@ Membrane_1 = {
 Membrane_2 = {
     "Name": 'Membrane_2',
     "Solving_Method": 'CC_ODE',                   
-    "Temperature": -33.49+273.15,                   
+    "Temperature": 25+273.15,                   
     "Pressure_Feed": 2.0,                       
-    "Pressure_Permeate": 0.3250,                  
+    "Pressure_Permeate": 0.22,                  
     "Q_A_ratio": 2.7810,                          
     "Permeance": [360, 13, 60, 360],        
     "Pressure_Drop": False,
@@ -119,9 +128,9 @@ Membrane_2 = {
 Membrane_3 = {
     "Name": 'Membrane_2',
     "Solving_Method": 'CC_ODE',                   
-    "Temperature": -33.49+273.15,                   
+    "Temperature": 25+273.15,                   
     "Pressure_Feed": 2.0,                       
-    "Pressure_Permeate": 0.3250,                  
+    "Pressure_Permeate": 0.22,                  
     "Q_A_ratio": 2.7810,                          
     "Permeance": [360, 13, 60, 360],        
     "Pressure_Drop": False,
@@ -132,7 +141,7 @@ Process_param = {
     "Target_Recovery" : 0.9,    # Target recovery from Membrane 2 - for now not a hard limit, but a target to be achieved
     "Replacement_rate": 4,      # Replacement rate of the membranes (in yr)
     "Operating_hours": 8000,    # Operating hours per year
-    "Lifetime": 20,             # Lifetime of the plant (in yr)
+    "Lifetime": 25,             # Lifetime of the plant (in yr)
     "Base_Clinker_Production": 9.65e5, #(tn/yr) 
     "Base Plant Cost": 149.8 * 1e6,     # Total direct cost of plant (no CCS) in 2014 money
     "Base_Plant_Primary_Emission": (846)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
@@ -505,17 +514,17 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         else: H2O_to_remove=0
 
         #Obtain vacuum pump duty and resulting cooling duty from each membrane:
-        Vacuum_Duty1 = [Vacuum_1.get_cell_value("B10")] # kW
+        Vacuum_Duty1 = Vacuum_1.get_cell_value("B10") # kW
         Vacuum_Cooling1 = [Vacuum_1.get_cell_value("G10"),Vacuum_1.get_cell_value("H10")]  # Area, WaterFlow
     
-        Vacuum_Duty2 = [Vacuum_2.get_cell_value("B10")] 
+        Vacuum_Duty2 = Vacuum_2.get_cell_value("B10")
         Vacuum_Cooling2 = [Vacuum_2.get_cell_value("G10"),Vacuum_2.get_cell_value("H10")] 
 
-        Vacuum_Duty3 = [Vacuum_3.get_cell_value("B10")] 
+        Vacuum_Duty3 = Vacuum_3.get_cell_value("B10") 
         Vacuum_Cooling3 = [Vacuum_3.get_cell_value("G10"),Vacuum_3.get_cell_value("H10")] 
     
         Vacuum_pump = (Vacuum_Duty1,Vacuum_Duty2,Vacuum_Duty3)
-        Vacuum_cooling = ((Vacuum_Cooling1),(Vacuum_Cooling2),(Vacuum_Cooling3))
+        Vacuum_cooling = (Vacuum_Cooling1,Vacuum_Cooling2,Vacuum_Cooling3)
         #PS: logic is implemented in unisim for coolers. If output of the vacuum pump is not hot (<35 C), the cooler will not be active and will return 0 duty.
     
         Expanders = [(Duties.get_cell_value('H27')),(Duties.get_cell_value('H33'))] #Two or three expanders depending on the wether mem1 pre conditioning train has an expander or not
@@ -550,10 +559,24 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         "Vacuum_Pump":Vacuum_pump, # Vacuum pump duties
         "Vacuum_Cooling": Vacuum_cooling, # Vacuum cooling data - required when vacuum pump outlet is hot
         }
+        def replace_none_with_zero(obj):
+            if obj is None:
+                return 0
+            if isinstance(obj, dict):
+                return {k: replace_none_with_zero(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [replace_none_with_zero(v) for v in obj]
+            if isinstance(obj, tuple):
+                return tuple(replace_none_with_zero(v) for v in obj)
+            if isinstance(obj, set):
+                return {replace_none_with_zero(v) for v in obj}
 
+            return obj
+
+        Process_specs = replace_none_with_zero(Process_specs)    
 
         from Costing import Costing
-        Economics = Costing(Process_specs, Process_param, Component_properties)
+        Economics = Costing(Process_specs, Process_param, Component_properties, Options)
         
         return Economics
 
@@ -564,7 +587,6 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
     def Opti_algorithm():
         
-        checkpoint_file = "de_checkpoint_desktop_CRMC3_9params_070126.pkl" # Checkpoint file name
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
         popsize = 20  # Population size multiplier
@@ -614,7 +636,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([11.878,7.98,21.12,8.61,11.29,5.21,-1.129,-27.9,4.699])
+                first_guess = np.array([4.45,8.4416,2.0569,3.04339,3.1847541,2.0316,8.8173,17.82055,-39.733])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
@@ -757,12 +779,11 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
         # Save the results
-        filename = 'CRMC3_desktop_9param_070126.txt'
         economics_str = format_economics(Economics)
-        res_filepath = os.path.join(results_dir, filename)
+        res_filepath = os.path.join(results_dir, output_filename)
         save_results(result, economics_str, res_filepath)
 
-        print("Results saved to", filename)
+        print("Results saved to", output_filename)
 
 
     #------------------------------#
@@ -868,15 +889,19 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
 
     
-    if Method == "Brute_Force":
+    if Options["Method"] == "Brute_Force":
         Brute_Force()
-    elif Method == "Optimisation":
-        Opti_algorithm()
-    elif Method == "Both":
+    elif Options["Method"] == "Optimisation":
+        Opti_algorithm()        
+        desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
+
+    elif Options["Method"] == "Both":
         Brute_Force()
-        Opti_algorithm()
+        Opti_algorithm()        
+        desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
+
     else: raise ValueError ("Incorrect method chosen - it should be either Brute_Force or Optimisation")
-    
+
     print("Done - probably")
 
 

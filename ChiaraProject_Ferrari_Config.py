@@ -1,4 +1,3 @@
-
 import numpy as np
 import pickle
 from Hub import Hub_Connector
@@ -41,10 +40,12 @@ elif Filename_input.lower() == "copy2":
     filename = 'ChiaraProject_Ferrari2021_Copy2.usc'
 elif Filename_input.lower() == "copy3":
     filename = 'ChiaraProject_Ferrari2021_Copy3.usc'
+elif Filename_input.lower() == "copy4":
+    filename = 'ChiaraProject_Ferrari2021_Copy4.usc'
 
-directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
-checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
+directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
+results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
+checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
 
 os.makedirs(checkpoint_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
@@ -53,25 +54,32 @@ logger = OptimisationLogger(
     log_dir=results_dir,
 )
 
+checkpoint_file = "de_checkpoint_forchiara_Task2.4_mem3_090226.pkl" # Checkpoint file name
+output_filename = 'forchiara_Task2.4_mem3_090226.txt' # Output result file name
+
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
 #-------------------------------#
-Method = "Optimisation" # Method is either by Brute_Force or Optimisation or Both
-if Method == "Both":
-   print(f"Using software path: {filename}; Running both Bruteforce and Optimisation methods")
-else:
-   print(f"Running the {Method} method for path {filename}")
 
-Options = { "Permeance_From_Activation_Energy": False}    # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
-print(f'Permeance from Activation Energy: {Options["Permeance_From_Activation_Energy"]}') 
+Options = { 
+    "Method": "Optimisation",  # Method is either by Brute_Force or Optimisation or Both
+    "Permeance_From_Activation_Energy": False, # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
+    "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
+    "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
+    "Purity_Hard_Cap": False
+    }    
+print(Options) 
+if Options["Method"] == "Both":print(f"Using software path: {filename}; Running both Bruteforce and Optimisation methods") 
+else: print(f"Running the { Options["Method"]} method for path {filename}")
+
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [0.5, 15], # Flow/Area ratio for the second stage
-    "Q_A_ratio_2" : [1, 20], # Flow/Area ratio for the first stage
-    "P_up_1" : [1.3, 20],  # Upper pressure range for the second stage in bar
-    "P_up_2" : [1.3, 15],  # Upper pressure range for the first stage in bar
+    "Q_A_ratio_1" : [0.5, 6], # Flow/Area ratio for the second stage
+    "Q_A_ratio_2" : [0.5, 6], # Flow/Area ratio for the first stage
+    "P_up_1" : [1.3, 15],  # Upper pressure range for the second stage in bar
+    "P_up_2" : [1.1, 10],  # Upper pressure range for the first stage in bar
     #"P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
     #"P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
     #"Temperature_1" : [-40, 70],  # Temperature range in Celcius
@@ -90,7 +98,7 @@ Membrane_1 = {
     "Pressure_Feed": 5.80,                  # bar
     "Pressure_Permeate": 0.22,                 # bar
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
-    "Permeance": [1000, 1000/50, 1000/20, 1000], # in GPU [CO2, N2, O2, H2O]
+    "Permeance": [600, 600/150, 600/60, 600], # in GPU [CO2, N2, O2, H2O]
     "Pressure_Drop": False,
     }
 
@@ -101,7 +109,7 @@ Membrane_2 = {
     "Pressure_Feed": 4,                       
     "Pressure_Permeate": 0.22,                  
     "Q_A_ratio": 8,                          
-    "Permeance": [1000, 1000/50, 1000/20, 1000],
+    "Permeance": Membrane_1["Permeance"],
     "Pressure_Drop": False,
     }
 
@@ -111,7 +119,7 @@ Process_param = {
 "Target_Recovery" : 0.9,    # Target recovery from Membrane 2 - for now not a hard limit, but a target to be achieved
 "Replacement_rate": 4,      # Replacement rate of the membranes (in yr)
 "Operating_hours": 8000,    # Operating hours per year
-"Lifetime": 20,             # Lifetime of the plant (in yr)
+"Lifetime": 25,             # Lifetime of the plant (in yr)
 "Base_Clinker_Production": 9.65e5, #(tn/yr) 
 "Base Plant Cost": 149.8 * 1e6,     # Total direct cost of plant (no CCS) in 2014 money
 "Base_Plant_Primary_Emission": (846)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
@@ -438,11 +446,11 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     
         #Obtain vacuum pump duty and resulting cooling duty from each membrane:
         Vacuum_1 = unisim.get_spreadsheet("Vacuum_1")
-        Vacuum_Duty1 = [Vacuum_1.get_cell_value("B10")] # kW
+        Vacuum_Duty1 = Vacuum_1.get_cell_value("B10") # kW
         Vacuum_Cooling1 = [Vacuum_1.get_cell_value("G10"),Vacuum_1.get_cell_value("H10")]  # Area, WaterFlow
  
         Vacuum_2 = unisim.get_spreadsheet("Vacuum_2")
-        Vacuum_Duty2 = [Vacuum_2.get_cell_value("B10")] 
+        Vacuum_Duty2 = Vacuum_2.get_cell_value("B10") 
         Vacuum_Cooling2 = [Vacuum_2.get_cell_value("G10"),Vacuum_2.get_cell_value("H10")] 
         #PS: logic is implemented in unisim for coolers. If output of the vacuum pump is not hot (<35 C), the cooler will not be active and will return 0 duty.
 
@@ -493,7 +501,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         Process_specs = replace_none_with_zero(Process_specs)    
 
         from Costing import Costing
-        Economics = Costing(Process_specs, Process_param, Component_properties)
+        Economics = Costing(Process_specs, Process_param, Component_properties, Options)
         
         return(Economics)
 
@@ -502,7 +510,6 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     #-------------------------------#
 
     def Opti_algorithm():
-        checkpoint_file = "de_checkpoint_Task2_forchiara_HighRecov_mem2_210126.pkl" # Checkpoint file name
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
         popsize = 20  # Population size multiplier
@@ -552,7 +559,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([2.83,5.65,4.49,2.28])
+                first_guess = np.array([4.45,8.44,2.06,3.04,3.18,2.03,8.82,17.82,-39.73])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
@@ -691,12 +698,11 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         def format_economics(Economics):
             return "\n".join(f"{key}: {value}" for key, value in Economics.items())
 
-        filename = 'Task2_forchiara_HighRecov_mem2_210126.txt' # Output file name
-        res_filepath = os.path.join(results_dir, filename)
+        res_filepath = os.path.join(results_dir, output_filename)
         economics_str = format_economics(Economics)
         save_results(result, economics_str, res_filepath)
 
-        print("Results saved to", filename)
+        print("Results saved to", output_filename)
 
 
     #------------------------------#
@@ -800,13 +806,13 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
 
     
-    if Method == "Brute_Force":
+    if Options["Method"] == "Brute_Force":
         Brute_Force()
-    elif Method == "Optimisation":
+    elif Options["Method"] == "Optimisation":
         Opti_algorithm()        
         desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')
 
-    elif Method == "Both":
+    elif Options["Method"] == "Both":
         Brute_Force()
         Opti_algorithm()        
         desktop_path = os.path.join(os.path.expanduser('~'), 'Desktop')

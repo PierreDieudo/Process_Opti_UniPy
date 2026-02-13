@@ -51,7 +51,7 @@ def mass_balance_CC_ODE(vars):
 
         nu=np.zeros(J)
         for i in range(J):
-            nu[i] = y[i] * visc [i] / sum(y[i] * phi[i][j] for j in range(J))
+            nu[i] = y[i] * visc [i] / sum(y[j] * phi[i][j] for j in range(J))
     
         visc_mix = sum(nu) # Viscosity of the mixture in Pa.s
         return visc_mix
@@ -157,6 +157,7 @@ def mass_balance_CC_ODE(vars):
             # Define the ODEs for each component
             dx_dz = np.zeros(J)
             dy_dz = np.zeros(J)
+            
             P_perm = var[-1]  # Permeate pressure
             
             for i in range(J):
@@ -166,7 +167,7 @@ def mass_balance_CC_ODE(vars):
             if Membrane["Pressure_Drop"]:     
                 composition = var[:J] / sum(var[:J])
                 Q = sum(var[:J])
-                dP_dz = -pressure_drop(composition, Q, var[-1])
+                dP_dz = pressure_drop(composition, Q, var[-1])
             else: 
                 dP_dz = 0
             
@@ -174,7 +175,7 @@ def mass_balance_CC_ODE(vars):
 
         # Initial conditions
         U_x_L = vars[:J] #input retentate guess for the shooting method
-        P_y_L = vars[-1] if Membrane["Pressure_Drop"] else Membrane["Pressure_Permeate"]
+        P_y_L = Membrane["Pressure_Permeate"]/vars[-1] if Membrane["Pressure_Drop"] else Membrane["Pressure_Permeate"] #guess sweep pressure
         U_y_L = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
 
         boundary = np.concatenate((U_x_L, U_y_L, [P_y_L]))
@@ -207,7 +208,7 @@ def mass_balance_CC_ODE(vars):
         approx_guess = [comp * approx_guess[-1] for comp in approx_guess[0:J]]
 
         if Membrane["Pressure_Drop"]:
-            approx_guess = approx_guess + [0.95] #guess for permeate pressure at feed entry, knowing that P_sweep = pP/guess
+            approx_guess = approx_guess + [0.99] #guess for permeate pressure at feed entry, knowing that P_sweep = pP/guess
 
         def module_shooting_error(vars):
 
@@ -220,6 +221,12 @@ def mass_balance_CC_ODE(vars):
             error_Fy = [abs(guess_Fx_N[i]-true_Fx_N[i]) for i in range(J)]
 
             shooting_error = error_Fy
+
+            if Membrane["Pressure_Drop"]:
+                guess_P_y_0 = guess_solution.y[-1,-1]
+                true_P_y_0 = Membrane["Pressure_Permeate"]
+                error_P = abs(guess_P_y_0 - true_P_y_0)/true_P_y_0
+                shooting_error = shooting_error + [error_P]
 
             return shooting_error
 
@@ -236,7 +243,7 @@ def mass_balance_CC_ODE(vars):
         )
     
         #if overall_sol.cost > 1e-5: 
-         #   print(f'Large mass balance closure error for shooting solution: {overall_sol.cost:.3e}')
+        #    print(f'Large mass balance closure error for shooting solution: {overall_sol.cost:.3e}')
 
         solution = mass_balance_reverse(overall_sol.x)
 
@@ -250,15 +257,14 @@ def mass_balance_CC_ODE(vars):
         y_profiles = U_y_profile / (np.sum(U_y_profile, axis=0) + epsilon)
         Qr_profile = np.sum(U_x_profile, axis=0)
         Qp_profile = -np.sum(U_y_profile, axis=0)
-
       
 
         if Membrane["Pressure_Drop"]:
-            print(f"Total pressure drop = {1e-5 * (solution.y[-1, -1]):.3f} bar")
+           
             P_profile = solution.y[-1, :]
+        
+            print(f'Pressure drop across the module: {P_profile[0]-P_profile[-1]:.2f} Pa')
 
-
-        '''
             # Plot pressure profile
             plt.figure(figsize=(8,6))
             plt.plot(z_points_norm, P_profile)
@@ -266,7 +272,7 @@ def mass_balance_CC_ODE(vars):
             plt.ylabel('Pressure (Pa)')
             plt.title('Pressure Drop Profile Along the Membrane')
             plt.show()
-        '''
+        
 
         data = {
             "norm_z": z_points_norm,
