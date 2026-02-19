@@ -59,8 +59,8 @@ logger = OptimisationLogger(
     log_dir=results_dir,
 )
 
-checkpoint_file = "de_checkpoint_desktop_CRMC3_9params_090226.pkl" # Checkpoint file name
-output_filename = 'CRMC3_desktop_9param_090226.txt'
+checkpoint_file = "de_checkpoint_desktop_CRMC3_9params_130226.pkl" # Checkpoint file name
+output_filename = 'CRMC3_desktop_9param_130226.txt'
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -83,7 +83,7 @@ else: print(f"Running the { Options["Method"]} method for path {filename}")
 Opti_Param = {
     "Q_A_ratio_1" : [1, 15], # Flow/Area ratio
     "Q_A_ratio_2" : [0.5, 10],  
-    "Q_A_ratio_3" : [2, 20], 
+    "Q_A_ratio_3" : [1, 20], 
 
     "P_up_1" : [1, 10],  # Feed pressure range  in bar    
     "P_up_2" : [1, 10],  

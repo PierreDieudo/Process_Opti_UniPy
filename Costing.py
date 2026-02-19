@@ -202,6 +202,7 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
 
     TAC_other = TAC_Cryo + TAC_Dehydration
 
+
     '''-----------------------------------#
     #-------------- Penalty --------------#
     #-----------------------------------'''
@@ -223,10 +224,7 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     Secondary_Emission = Power_Consumption * Indirect_Emission_rate # (tonnes/yr) CO2 emissions from electricity consumption
     Equiv_Emission = Primary_emission + Secondary_Emission
     
-    if Options["Recovery_Soft_Cap"][0]: #if recovery soft cap is active
-        if Options["Recovery_Soft_Cap"][1] <= Process_specs["Recovery"]: #if recovery is above the soft cap - remove the primary emissions (i.e., no incentive to recover further)
-            Equiv_Emission = Secondary_Emission
-    
+
     Penalty_CO2_emission = Equiv_Emission * Carbon_Tax #eur/yr 
     
     if Options["Extra_Recovery_Penalty"] and (Options["Recovery_Soft_Cap"][1] > Process_specs["Recovery"]) > 0: # Extra penalty for recovery under 90% to encourage high recovery rates
@@ -235,7 +233,14 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
 
     Penalty = Penalty_purity + Penalty_CO2_emission + Extra_Penalty # Total penalty for purity and CO2 emissions
 
+    ### Emissions due to cryognenic systems:
+    Cryo_Energy = 0
+    for Cryo in Process_specs["Cryogenics"]:
+        T = Cryo[1]
+        Cryo_COP = 1.93e-8*(T**5) -2.30e-5*(T**4) +1.10e-2*(T**3) -2.61*(T**2) + 3.11e2*T - 1.48e4
+        Cryo_Energy += Cryo[0] * 1e6 /3600  * Process_param["Operating_hours"] / Cryo_COP #from GJ/hr to kWh/yr including the coefficient of performance
 
+    Power_Consumption += Cryo_Energy
     '''------------------------'''
 
     ### Estimate cost of carbon capture process as a TAC
@@ -247,18 +252,8 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     ### Cost of Capture ###
     Total_Captured= Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] * Process_param["Operating_hours"] * 3600 * Process_specs["Recovery"] * Comp_properties["Molar_mass"][0] * 1e-6 # Total CO2 captured in tonnes per year
 
-    Cost_of_Avoidance = TAC_CC / ( Total_Captured - Secondary_Emission) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
+    Cost_of_Avoidance = TAC_CC / ( Total_Captured) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
     Cost_of_Capture = TAC_CC / ( Total_Captured - Secondary_Emission) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
-
-
-    ### Emissions due to cryognenic systems:
-    Cryo_Energy = 0
-    for Cryo in Process_specs["Cryogenics"]:
-        T = Cryo[1]
-        Cryo_COP = 1.93e-8*(T**5) -2.30e-5*(T**4) +1.10e-2*(T**3) -2.61*(T**2) + 3.11e2*T - 1.48e4
-        Cryo_Energy += Cryo[0] * 1e6 /3600  * Process_param["Operating_hours"] / Cryo_COP #from GJ/hr to kWh/yr including the coefficient of performance
-
-    Power_Consumption += Cryo_Energy
 
     ### Specific Primary Energy Consumption for CO2 Avoided ###
     q_eq_ccs = Power_Consumption*3.6/Electrivity_Generation_Efficiency #primary consumption of the CCS plant (in MJ/yr)
