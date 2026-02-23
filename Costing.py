@@ -252,8 +252,8 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     ### Cost of Capture ###
     Total_Captured= Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] * Process_param["Operating_hours"] * 3600 * Process_specs["Recovery"] * Comp_properties["Molar_mass"][0] * 1e-6 # Total CO2 captured in tonnes per year
 
-    Cost_of_Avoidance = TAC_CC / ( Total_Captured) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
-    Cost_of_Capture = TAC_CC / ( Total_Captured - Secondary_Emission) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
+    Cost_of_Avoidance = TAC_CC / ( Total_Captured- Secondary_Emission) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
+    Cost_of_Capture = TAC_CC / ( Total_Captured) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
 
     ### Specific Primary Energy Consumption for CO2 Avoided ###
     q_eq_ccs = Power_Consumption*3.6/Electrivity_Generation_Efficiency #primary consumption of the CCS plant (in MJ/yr)
