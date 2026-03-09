@@ -133,7 +133,7 @@ Membrane_2 = {
     "Q_A_ratio": 1.92,                      
     "Permeance": [600, 600/150, 600/60, 600],
     "Pressure_Drop": True,
-    "Material": "PIM-1",
+    "Material": Membrane_1["Material"],
     }
 
 Process_param = {
@@ -149,16 +149,6 @@ Process_param = {
 "Base_Plant_Secondary_Emission": (34)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
 "Contingency": 0.3,         # or 0.4 (30% or 40% contingency for process design - based on TRL)
 }
-
-Component_properties = {
-    "Viscosity_param": ([0.0479,0.6112],[0.0466,3.8874],[0.0558,3.8970], [0.03333, -0.23498]),  # Viscosity parameters for each component: slope and intercept for the viscosity correlation wiht temperature (in K) - from NIST
-    "Molar_mass": [44.009, 28.0134, 31.999,18.01528],                                           # Molar mass of each component in g/mol"
-    "Activation_Energy_Aged": ([12750,321019],[25310,2186946],[15770,196980],[12750,321019]),   # PIM-1 ([Activation energy - J/mol],[pre-exponential factor - GPU])
-    "Activation_Energy_Fresh": ([2880,16806],[16520,226481],[3770,3599],[2880,16806]),          # PIM-1
-    "Activation_Energy_Aged": ([510,629],[9670,1236],[1500,193],[510,629]),   # KIM-1
-    "Activation_Energy_Aged": ([27060,22325381],[33110,3396963],[29000,2409785],[27060,22325381]),   # BMA-TB
-    "Activation_Energy_Aged": ([7700,181],[20300,1045],[16000,1144],[7700,181]),   # Matrimid !Does not age!
-    }
 
 Fibre_Dimensions = {
 "D_in" : 600 * 1e-6,    # Inner diameter in m (from um)

@@ -10,6 +10,8 @@ import tqdm
 import os
 import time
 from Optimisation_logger import OptimisationLogger
+from Materials import validate_membrane
+
 
 #the ode solver sometimes returns these warning.Since we already handle incorrect mass balances we can safely ignore them.
 import warnings
@@ -71,9 +73,11 @@ checkpoint_file = "SingleMem_3param_forchiara_mem5_20126.pkl" # Checkpoint file 
 Options = { 
     "Method": "Optimisation",  # Method is either by Brute_Force or Optimisation or Both
     "Permeance_From_Activation_Energy": True, # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
-    "Extra_Recovery_Penalty": False,  # If true, adds a penalty to the objective function to encourage higher recoveries
-    "Recovery_Soft_Cap": (True, 0.90),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
-    }    
+    "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
+    "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
+    "Purity_Hard_Cap": True,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
+    "Anti_Aging_LowTemp": True, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
+    }     
 print(Options) 
 if Options["Method"] == "Both":print(f"Using software path: {filename}; Running both Bruteforce and Optimisation methods") 
 else: print(f"Running the { Options["Method"]} method for path {filename}")
@@ -101,6 +105,7 @@ Membrane_1 = {
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [1000, 1000/200, 1000/80, 1000], # in GPU [CO2, N2, O2, H2O]
     "Pressure_Drop": False,
+    "Material": "PIM-1", # Material used - important if getting permeance from activation energies
     }
 
 Sweep = {
@@ -131,21 +136,14 @@ Process_param = {
     "Contingency": 0.3,         # or 0.4 (30% or 40% contingency for process design - based on TRL)
     }
 
-Component_properties = {
-    "Viscosity_param": ([0.0479,0.6112],[0.0466,3.8874],[0.0558,3.8970], [0.03333, -0.23498]),  # Viscosity parameters for each component: slope and intercept for the viscosity correlation wiht temperature (in K) - from NIST
-    "Molar_mass": [44.009, 28.0134, 31.999,18.01528],                                           # Molar mass of each component in g/mol"
-    "Activation_Energy_Aged": ([12750,321019],[25310,2186946],[15770,196980],[12750,321019]),   # ([Activation energy - J/mol],[pre-exponential factor - GPU])
-    "Activation_Energy_Fresh": ([2880,16806],[16520,226481],[3770,3599],[2880,16806]),          #Valid only if temperature is -20 C or under - not considered for now
-    }
-
 Fibre_Dimensions = {
 "D_in" : 600 * 1e-6,    # Inner diameter in m (from um)
 "D_out" : 800 * 1e-6,   # Outer diameter in m (from um)
 }
   
-J = len(Membrane_1["Permeance"]) #number of components
-
-
+components = ["CO2", "N2", "O2", "H2O"]
+Component_properties = validate_membrane(Membrane_1, components)
+J = len(components) #number of components
 
 with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
@@ -250,37 +248,23 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         def Run(Membrane):
 
-            J = len(Membrane["Permeance"])
             # Set membrane Area based on its feed flow and Q_A_ratio:
             Membrane["Area"] = (Membrane["Feed_Flow"] * 0.0224  * 3600) / Membrane["Q_A_ratio"] # (0.0224 is the molar volume of an ideal gas at STP in m3/mol)
-            if not Sweep["Option"]:
-                Membrane["Sweep_Flow"] = 0 # No sweep
-                Membrane["Sweep_Composition"] = [0] * len(Membrane_1["Permeance"])
 
-            elif Sweep["Source"]=="User": # Constant Sweep from User dictionary
-                Membrane["Sweep_Flow"] = Sweep1.get_cell_value('C15') #need to obtain the sweep flowrates after conditioning to membrane temperature and pressure
-                Membrane["Sweep_Composition"] = [0] * J
-                for i in range(J):
-                    Membrane["Sweep_Composition"][i] = Sweep1.get_cell_value(f'C{16+i}') / Membrane["Sweep_Flow"]
-
-            elif Sweep["Source"]=="Retentate": #Sweep from Retentate Recycling
-                Membrane["Sweep_Flow"] = Sweep1.get_cell_value('G8') #need to obtain the sweep flowrates after conditioning to membrane temperature and pressure
-                Membrane["Sweep_Composition"] = [0] * J
-                if not Membrane["Sweep_Flow"]:
-                    Membrane["Sweep_Flow"] = 0  # Handles no sweep on the first iteration (no recycling yet)
-                else:
-                    for i in range(J):
-                        Membrane["Sweep_Composition"][i] = Sweep1.get_cell_value(f'G{9+i}') / (1e-12 + Membrane["Sweep_Flow"])
+            Membrane["Sweep_Flow"] = 0 # No sweep in this configuration
+            Membrane["Sweep_Composition"] = [0] * len(Membrane_1["Permeance"])
 
             Export_to_mass_balance = Membrane, Component_properties, Fibre_Dimensions
 
             J = len(Membrane["Permeance"]) #number of components
             
-            if Options["Permeance_From_Activation_Energy"]:
-                # Obtain Permeance with temperature:
-                for i in range(J):
-                    Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
-
+            if Options["Permeance_From_Activation_Energy"]: # Obtain Permeance with temperature:
+                if not Options["Anti_Aging_LowTemp"]: # Aged properties
+                    for i in range(J):
+                        Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
+                else: # Fresh properties
+                    for i in range(J):
+                        Membrane["Permeance"][i] = Component_properties["Activation_Energy_Fresh"][i][1] * np.exp(-Component_properties["Activation_Energy_Fresh"][i][0] / (8.314 * Membrane["Temperature"]))
 
             results, profile = Hub_Connector(Export_to_mass_balance)
             Membrane["Retentate_Composition"],Membrane["Permeate_Composition"],Membrane["Retentate_Flow"],Membrane["Permeate_Flow"] = results
@@ -289,7 +273,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane["Permeance"] = [p / ( 3.348 * 1e-10 ) for p in Membrane["Permeance"]]  # convert from mol/m2.s.Pa to GPU
             Membrane["Pressure_Feed"] *= 1e-5  #convert to bar
             Membrane["Pressure_Permeate"] *= 1e-5  
-        
+
             errors = []
             for i in range(J):    
                 # Calculate comp molar flows
@@ -306,7 +290,9 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if np.any(profile<-1e-5) or cumulated_error>1e-5 or errors[-1]>1e-3:
                 raise ConvergenceError 
                 
-            return results, profile
+            
+            #print(profile)
+            return results, profile 
 
         #-----------------------------------------------------------------------------#
         # Run iterations for process recycling loop - Specific to this configuration! #
