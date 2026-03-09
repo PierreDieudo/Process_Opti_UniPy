@@ -38,7 +38,7 @@ class OptimisationLogger:
         log_interval=100,
         rolling_window=100,
         failure_penalty=5e9,
-        min_recovery=0.025,
+        min_recovery=0.01,
     ):
         # Directory only — filename is auto-generated
         self.log_dir = log_dir or "."

@@ -313,12 +313,12 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             J = len(Membrane["Permeance"]) #number of components
             
             if Options["Permeance_From_Activation_Energy"]: # Obtain Permeance with temperature:
-                if not Options["Anti_Aging_LowTemp"]: # Aged properties
-                    for i in range(J):
-                        Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
-                else: # Fresh properties
+                if Options["Anti_Aging_LowTemp"] and Membrane["Temperature"] <= 253.15: # Fresh properties used at low temperature, aged properties at higher temperature if options true
                     for i in range(J):
                         Membrane["Permeance"][i] = Component_properties["Activation_Energy_Fresh"][i][1] * np.exp(-Component_properties["Activation_Energy_Fresh"][i][0] / (8.314 * Membrane["Temperature"]))
+                else: 
+                    for i in range(J):
+                        Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
 
             results, profile = Hub_Connector(Export_to_mass_balance)
             Membrane["Retentate_Composition"],Membrane["Permeate_Composition"],Membrane["Retentate_Flow"],Membrane["Permeate_Flow"] = results
@@ -341,7 +341,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
             # Calculate the cumulated error
             cumulated_error = sum(errors) - errors[-1] # Remove water because its relative error is large at low temperature (1e-4). Its absolute error however is negligible due to its very low concentration
-            if np.any(profile<-1e-5) or cumulated_error>1e-5 or errors[-1]>1e-3:
+            if np.any(profile<-1e-3) or cumulated_error>1e-5 or errors[-1]>1e-3:
                 raise ConvergenceError 
                 
             
@@ -589,7 +589,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
-        popsize = 20  # Population size multiplier
+        popsize = 10  # Population size multiplier
         
                 # ----------------- Load checkpoint or midpoint guess -----------------
         def load_checkpoint():
@@ -729,7 +729,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             bounds,
             maxiter=1000,  
             popsize=popsize,  
-            tol=5e-3,
+            tol=1e-3,
             callback=callback,
             mutation=(0.5,1.0),
             recombination=0.7,
