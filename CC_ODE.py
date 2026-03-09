@@ -1,91 +1,74 @@
 import math
+from tkinter import N
 import matplotlib.pyplot as plt
-from pytest import approx
-from scipy.integrate import solve_ivp
+from scipy.integrate import solve_bvp
 from scipy.optimize import least_squares
 import numpy as np
 import pandas as pd
-import os
-
 
 def mass_balance_CC_ODE(vars):
 
     Membrane, Component_properties, Fibre_Dimensions = vars
     Membrane["Total_Flow"] = Membrane["Feed_Flow"] + Membrane["Sweep_Flow"]
-    Fibre_Dimensions["Number_Fibre"] = Membrane["Area"] / (Fibre_Dimensions["Length"] * math.pi * Fibre_Dimensions["D_out"])  # number of fibres in the module
-    epsilon = 1e-8
-    
-    #Number of elements N
-    J = len(Membrane["Feed_Composition"])
-    min_elements = [100]  # minimum of 100 elements
-    for i in range(J):  # (Coker and Freeman, 1998)
-        N_i = (Membrane["Area"] * (1 - Membrane["Feed_Composition"][i] + 0.005) * Membrane["Permeance"][i] * Membrane["Pressure_Feed"] * Membrane["Feed_Composition"][i]) / (Membrane["Feed_Flow"] * 0.005)
-        min_elements.append(N_i)
-    n_elements = min(round(max(min_elements)), 1000)
-     
-    Membrane["Feed_Composition"] = np.array(Membrane["Feed_Composition"])
+    Fibre_Dimensions["Number_Fibre"] = Membrane["Area"] / (Fibre_Dimensions["Length"] * math.pi * Fibre_Dimensions["D_out"])
+
+    epsilon = 1e-10
+
+    J = len(Membrane["Feed_Composition"])   
+
+    n_elements = 250
+
+    L = Fibre_Dimensions["Length"]
+
+    Membrane["Feed_Composition"]  = np.array(Membrane["Feed_Composition"])
     Membrane["Sweep_Composition"] = np.array(Membrane["Sweep_Composition"])
-   
-   
+
+
     '''----------------------------------------------------------###
     ###------------- Mixture Viscosity Calculation --------------###
     ###----------------------------------------------------------'''
 
-    def mixture_visc(composition): #Calculate the viscosity of a mixture using Wilke's method
-
-        y = composition # mole fractions
-    
+    def mixture_visc(composition):
+        y = composition
         visc = np.zeros(J)
-        for i, (slope, intercept) in enumerate(Component_properties["Viscosity_param"]):
-            visc[i] = 1e-6*(slope * Membrane["Temperature"] + intercept)  # Viscosity of pure component - in Pa.s
-
-        Mw = Component_properties["Molar_mass"]  # Molar mass of component in kg/kmol
-
+        params = np.array(Component_properties["Viscosity_param"])
+        visc = 1e-6 * (params[:, 0] * Membrane["Temperature"] + params[:, 1]) 
+        Mw = Component_properties["Molar_mass"]
         phi = np.zeros((J, J))
         for i in range(J):
             for j in range(J):
                 if i != j:
-                    phi[i][j] = ( ( 1 + ( visc[i]/visc[j] )**0.5 * ( Mw[j]/Mw[i] )**0.25 ) **2 ) / ( ( 8 * ( 1 + Mw[i]/Mw[j] ) )**0.5 ) 
+                    phi[i][j] = ( ( 1 + ( visc[i]/visc[j] )**0.5 * ( Mw[j]/Mw[i] )**0.25 ) **2 ) / ( ( 8 * ( 1 + Mw[i]/Mw[j] ) )**0.5 )
                 else:
                     phi[i][j] = 1
-
-        nu=np.zeros(J)
+        nu = np.zeros(J)
         for i in range(J):
-            nu[i] = y[i] * visc [i] / sum(y[j] * phi[i][j] for j in range(J))
-    
-        visc_mix = sum(nu) # Viscosity of the mixture in Pa.s
-        return visc_mix
+            nu[i] = y[i] * visc[i] / sum(y[j] * phi[i][j] for j in range(J))
+        return sum(nu)
+
 
     '''----------------------------------------------------------###
     ###--------------- Pressure Drop Calculation ----------------###
     ###----------------------------------------------------------'''
 
-    def pressure_drop(composition, Q, P): #change in pressure across the element - Hagen Poiseuille equation
-
-        visc_mix = mixture_visc(composition)                                                # Viscosity of the mixture in Pa.s
-        D_in = Fibre_Dimensions["D_in"]                                                     # Inner diameter in m
-        Q = Q/Fibre_Dimensions['Number_Fibre']                                              # Flowrate in fibre in mol/s
-        R = 8.314                                                                           # J/(mol.K) - gas constant
-        nu = (Q * R * Membrane["Temperature"])/P                                            # volumetric flowrate in m3/s
-
-        dP_dz = (128 * visc_mix) / (math.pi * D_in**4 * P ) * nu    # Pressure drop in Pa across the element per unit length
+    def pressure_drop(composition, Q, P):
+        visc_mix = mixture_visc(composition)
+        D_in = Fibre_Dimensions["D_in"]
+        Q = Q / Fibre_Dimensions['Number_Fibre']
+        R = 8.314
+        nu = (Q * R * Membrane["Temperature"]) / P
+        dP_dz = (128 * visc_mix) / (math.pi * D_in**4 * P) * nu
         return dP_dz
-
-
+    
+  
     '''---------------------------------------------------------------###
     ###---------- Non discretised solution for initial guess ----------###
     ###---------------------------------------------------------------'''
-
-    '''
-    - Approximate solution for overall mass balance. Will be used as an input for the shooting method.
-    - Using the log mean partial pressure difference as driving force. Heavier and less stable than dicretisation, but provides a good estimate.
-    '''
 
     def approx_mass_balance(vars):
 
         J = len(Membrane["Feed_Composition"])
 
-        # known composition and flowrates entering the module
         x_N = Membrane["Feed_Composition"]
         y_0 = Membrane["Sweep_Composition"]
         cut_r_N = Membrane["Feed_Flow"]/Membrane["Total_Flow"]
@@ -94,46 +77,41 @@ def mass_balance_CC_ODE(vars):
         Qr_N = Membrane["Feed_Flow"] 
         Qp_0 = Membrane["Sweep_Flow"]
 
-        x_0 = vars [0:J] # retentate mole fractions
-        y_N = vars [J:2*J] # permeate mole fractions
-        cut_r_0 = vars[-2] # retentate flowrate fraction
-        cut_p_N= vars[-1] # permeate flowrate fraction
+        x_0 = vars [0:J]
+        y_N = vars [J:2*J]
+        cut_r_0 = vars[-2]
+        cut_p_N= vars[-1]
 
-        Qr_0 = Membrane["Total_Flow"] * cut_r_0 # retentate flowrate
+        Qr_0 = Membrane["Total_Flow"] * cut_r_0
         Qp_N = Membrane["Total_Flow"] * cut_p_N
 
-        eqs = [0]*(2*J+2) # empty list to store the equations
+        eqs = [0]*(2*J+2)
 
-
-        #molar fractions summing to unity:
         eqs[0] = sum(x_0) - 1
         eqs[1] = sum(y_N) - 1
 
-        #mass balance for each component across the module
         for i in range(J):
-            eqs[i+2] = ( x_N[i] * cut_r_N - x_0[i] * cut_r_0 + y_0[i] * cut_p_0 - y_N[i] * cut_p_N ) #in ret - out ret + in perm - out perm
+            eqs[i+2] = ( x_N[i] * cut_r_N - x_0[i] * cut_r_0 + y_0[i] * cut_p_0 - y_N[i] * cut_p_N )
 
-        #flow across membrane --> change in permeate flowrate is equal to the permeation across the area
         for i in range (J): 
             pp_diff_in = Membrane["Pressure_Feed"] * x_N[i] - Membrane["Pressure_Permeate"] * y_0[i]
             pp_diff_out = Membrane["Pressure_Feed"] * x_0[i] - Membrane["Pressure_Permeate"] * y_N[i]
 
-            if (pp_diff_in / (pp_diff_out + epsilon) + epsilon) >= 0: #using the log mean partial pressure difference as it is a better approximation when the membrane is not discretise.
-                ln_term = math.log((pp_diff_in) / (pp_diff_out + epsilon) + epsilon)  #It is however less stable, hence these expressions to make sure there is no division by zero.
+            if (pp_diff_in / (pp_diff_out + epsilon) + epsilon) >= 0:
+                ln_term = math.log((pp_diff_in) / (pp_diff_out + epsilon) + epsilon)
             else:
                 ln_term = epsilon 
 
-            dP = (pp_diff_in - pp_diff_out) / ln_term # driving force
+            dP = (pp_diff_in - pp_diff_out) / ln_term
 
-            eqs[i+2+J] = 1 - ( Membrane["Area"] * dP * Membrane["Permeance"][i] ) / ( y_N[i] * Qp_N - y_0[i] * Qp_0 +epsilon)# difference in permeate flowrate in/out = permeation across the area
+            eqs[i+2+J] = 1 - ( Membrane["Area"] * dP * Membrane["Permeance"][i] ) / ( y_N[i] * Qp_N - y_0[i] * Qp_0 +epsilon)
 
         return eqs
 
     def approx_shooting_guess():
 
         J = len(Membrane["Feed_Composition"])
-        #solving the approximate mass balance for the module
-        approx_guess = [1/J]*J * 2 + [0.5] * 2 #ret and perm compositions + flows
+        approx_guess = [1/J]*J * 2 + [0.5] * 2
 
         approx_sol = least_squares(
             approx_mass_balance,
@@ -144,160 +122,115 @@ def mass_balance_CC_ODE(vars):
             )
 
         return approx_sol
-
-
-    def mass_balance_reverse(vars):
-        J = len(Membrane["Feed_Composition"])
-
-        def membrane_odes(z, var, params):
-            Membrane, Component_properties, Fibre_Dimensions = params
-            J = len(Membrane["Feed_Composition"])
-
-            epsilon = 1e-8
-            # Define the ODEs for each component
-            dx_dz = np.zeros(J)
-            dy_dz = np.zeros(J)
-            
-            P_perm = var[-1]  # Permeate pressure
-            
-            for i in range(J):
-                dx_dz[i] = 1/Membrane["Total_Flow"] * ( - Membrane["Permeance"][i] * (Fibre_Dimensions["D_out"] * math.pi * Fibre_Dimensions["Number_Fibre"]) * (Membrane["Pressure_Feed"] * var[i]/(sum(var[:J])+epsilon) - P_perm * var[J+i]/(sum(var[J:2*J])+epsilon)) ) # change in component flow in retentate is negative of permeation
-                dy_dz[i] = - dx_dz[i]
-                
-            if Membrane["Pressure_Drop"]:     
-                composition = var[:J] / sum(var[:J])
-                Q = sum(var[:J])
-                dP_dz = pressure_drop(composition, Q, var[-1])
-            else: 
-                dP_dz = 0
-            
-            return np.concatenate((dx_dz, dy_dz, [dP_dz]))
-
-        # Initial conditions
-        U_x_L = vars[:J] #input retentate guess for the shooting method
-        P_y_L = Membrane["Pressure_Permeate"]/vars[-1] if Membrane["Pressure_Drop"] else Membrane["Pressure_Permeate"] #guess sweep pressure
-        U_y_L = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
-
-        boundary = np.concatenate((U_x_L, U_y_L, [P_y_L]))
-        params = (Membrane, Component_properties, Fibre_Dimensions)
     
-        t_span = [Fibre_Dimensions['Length'], 0]
-        t_eval = np.linspace(t_span[0], t_span[1], max(250,n_elements))
-
-        solution = solve_ivp(
-            lambda z, var: membrane_odes(z, var, params),
-            t_span,
-            y0 = boundary,
-            method='BDF',
-            t_eval=t_eval,
-            )
-
-        return solution
 
     '''----------------------------------------------------------###
-    ###---------- Shooting Method for Overall Solution ----------###
+    ###--------------------- BVP Solver ------------------------###
     ###----------------------------------------------------------'''
 
-    def shooting_method():
+    def membrane_odes(z, var):
+        u_x = np.maximum(var[:J], 1e-10)
+        u_y = np.minimum(var[J:2*J], -1e-10) 
+        P_perm = var[2*J] if var.shape[0] > 2*J else Membrane["Pressure_Permeate"]
 
-        J = len(Membrane["Feed_Composition"])
+        P_perm = Membrane["Pressure_Permeate"]
+        Pf     = Membrane["Pressure_Feed"]
+        A      = Fibre_Dimensions["D_out"] * math.pi * Fibre_Dimensions["Number_Fibre"]
+        Ttot   = Membrane["Total_Flow"]
     
-        approx_solution = approx_shooting_guess()
+        permeance = np.array(Membrane["Permeance"])
 
-        approx_guess = approx_solution.x[0:J].tolist() + [approx_solution.x[-2]] #guess for the retentate composition and normalised flowrate at element 1
-        approx_guess = [comp * approx_guess[-1] for comp in approx_guess[0:J]]
+        sum_ux = np.sum(u_x, axis=0)
+        sum_uy = np.sum(u_y, axis=0)
 
-        if Membrane["Pressure_Drop"]:
-            approx_guess = approx_guess + [0.99] #guess for permeate pressure at feed entry, knowing that P_sweep = pP/guess
-
-        def module_shooting_error(vars):
-
-            guess_solution = mass_balance_reverse(vars)
-
-            guess_Fx_N = guess_solution.y[:J,-1]
-
-            true_Fx_N = [comp * Membrane["Feed_Flow"]/Membrane["Total_Flow"] for comp in Membrane["Feed_Composition"]]
-
-            error_Fy = [abs(guess_Fx_N[i]-true_Fx_N[i]) for i in range(J)]
-
-            shooting_error = error_Fy
-
-            if Membrane["Pressure_Drop"]:
-                guess_P_y_0 = guess_solution.y[-1,-1]
-                true_P_y_0 = Membrane["Pressure_Permeate"]
-                error_P = abs(guess_P_y_0 - true_P_y_0)/true_P_y_0
-                shooting_error = shooting_error + [error_P]
-
-            return shooting_error
-
-        #least_squares function to solve the overall mass balance
-        bounds = (0, 1) 
-
-        overall_sol = least_squares(
-            module_shooting_error,
-            approx_guess,
-            method='dogbox',
-            bounds=bounds,
-            xtol=1e-8,
-            ftol=1e-8,
-        )
+        # safe mole fractions
+        x = np.zeros_like(u_x)
+        y = np.zeros_like(u_y)
     
-        #if overall_sol.cost > 1e-5: 
-        #    print(f'Large mass balance closure error for shooting solution: {overall_sol.cost:.3e}')
+        safe_x = np.abs(sum_ux) > 1e-6
+        safe_y = np.abs(sum_uy) > 1e-6
+    
+        x[:, safe_x] = u_x[:, safe_x] / sum_ux[safe_x]
+        y[:, safe_y] = u_y[:, safe_y] / sum_uy[safe_y]
 
-        solution = mass_balance_reverse(overall_sol.x)
+        du_x_dz = -(permeance[:, None] * A / Ttot) * (Pf * x - P_perm * y)
+        du_y_dz = -du_x_dz
 
-        z_points = solution.t
-        z_points_norm = z_points / np.max(z_points)    
-        U_x_profile = solution.y[:J, :]
-        U_y_profile = solution.y[J:2*J, :]
+        return np.concatenate([du_x_dz, du_y_dz], axis=0)
+    
+    def bc(ya, yb):
+        feed_norm  =  Membrane["Feed_Composition"]  * Membrane["Feed_Flow"]  / Membrane["Total_Flow"]
+        sweep_norm = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
+        return np.concatenate([ya[:J] - feed_norm, yb[J:2*J] - sweep_norm])
 
-        # Calculate the compositions and flows
-        x_profiles = U_x_profile / np.sum(U_x_profile, axis=0)
-        y_profiles = U_y_profile / (np.sum(U_y_profile, axis=0) + epsilon)
-        Qr_profile = np.sum(U_x_profile, axis=0)
-        Qp_profile = -np.sum(U_y_profile, axis=0)
-      
+    sol = approx_shooting_guess() #conducts a simplified mass balance to get an initial guess
+    x_L_approx = sol.x[:J]
+    y_0_approx = sol.x[J:2*J]
+    cut_r_L    = sol.x[-2]
+    cut_p_0    = sol.x[-1]
+    U_x_z0_approx = x_L_approx * cut_r_L #approx 
+    U_y_zL_approx  = -y_0_approx * cut_p_0
 
-        if Membrane["Pressure_Drop"]:
-           
-            P_profile = solution.y[-1, :]
-        
-            print(f'Pressure drop across the module: {P_profile[0]-P_profile[-1]:.2f} Pa')
+    U_x_feed_norm  =  Membrane["Feed_Composition"]  * Membrane["Feed_Flow"]  / Membrane["Total_Flow"]
+    U_y_sweep_norm = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
 
-            # Plot pressure profile
-            plt.figure(figsize=(8,6))
-            plt.plot(z_points_norm, P_profile)
-            plt.xlabel('Normalized Length')
-            plt.ylabel('Pressure (Pa)')
-            plt.title('Pressure Drop Profile Along the Membrane')
-            plt.show()
-        
+    x_init = np.linspace(0, Fibre_Dimensions["Length"], 10)
 
-        data = {
-            "norm_z": z_points_norm,
-            **{f"x{i+1}": x_profiles[i, :] for i in range(J)},
-            **{f"y{i+1}": y_profiles[i, :] for i in range(J)},
-            "cut_r/Qr": Qr_profile,
-            "cut_p/Qp": Qp_profile,
-        }
+    U_x_init = np.zeros((J, 10))
+    U_y_init = np.zeros((J, 10))
+    for i in range(J):
+        U_x_init[i, :] = np.linspace(U_x_feed_norm[i], U_x_z0_approx[i], 10)
+        U_y_init[i, :] = np.linspace(U_y_zL_approx[i], U_y_sweep_norm[i], 10)
+    y_init = np.vstack([U_x_init, U_y_init])
 
-        # Create DataFrame
-        profile = pd.DataFrame(data)
+    ### BVP SOLVER ###
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=RuntimeWarning, 
+                              module='scipy.integrate._bvp')
+        bvp_sol = solve_bvp(membrane_odes, bc, x_init, y_init, tol=1e-4, max_nodes=1000)
 
-        x_ret = profile.iloc[0, 1:J+1].values
-        y_perm = profile.iloc[-1, J+1:2*J+1].values
-        cut_r = profile.iloc[0, 2*J+1]
-        cut_p = profile.iloc[-1, 2*J+2]
-        Qr = cut_r * Membrane["Total_Flow"]
-        Qp = cut_p * Membrane["Total_Flow"]
-        CC_ODE_results = x_ret, y_perm, Qr, Qp
+    y_sol = bvp_sol.y                          # shape (2J, n_points) on adaptive mesh
+    z_adaptive = bvp_sol.x                     # adaptive mesh chosen by solver
 
-        return CC_ODE_results, profile
+    U_x_profile = y_sol[:J, :]  * Membrane["Total_Flow"]
+    U_y_profile = y_sol[J:2*J, :] * Membrane["Total_Flow"]
 
-    return shooting_method()
+    if Membrane["Sweep_Flow"] == 0:
+        threshold = 1e-4
+    else:
+        threshold = 1e-8
 
+    x_profiles = np.zeros_like(U_x_profile)
+    y_profiles = np.zeros_like(U_y_profile)
 
+    sum_ux_prof = np.sum(U_x_profile, axis=0)
+    sum_uy_prof = np.sum(U_y_profile, axis=0)
 
+    safe_x = np.abs(sum_ux_prof) > threshold
+    safe_y = np.abs(sum_uy_prof) > threshold
 
+    x_profiles[:, safe_x] = U_x_profile[:, safe_x] / sum_ux_prof[safe_x]
+    y_profiles[:, safe_y] = U_y_profile[:, safe_y] / sum_uy_prof[safe_y]
 
+    Qr_profile =  np.sum(U_x_profile, axis=0)
+    Qp_profile = -np.sum(U_y_profile, axis=0)
+
+    z_norm = z_adaptive / Fibre_Dimensions["Length"]
+    data = {
+        "norm_z":   z_norm,
+        **{f"x{i+1}": x_profiles[i, :] for i in range(J)},
+        **{f"y{i+1}": y_profiles[i, :] for i in range(J)},
+        "Qr": Qr_profile,
+        "Qp": Qp_profile,
+    }
+   
+    profile = pd.DataFrame(data)
+
+    x_ret  = profile.iloc[-1][[f"x{i+1}" for i in range(J)]].values
+    y_perm = profile.iloc[0][[f"y{i+1}" for i in range(J)]].values
+    Qr     = profile.iloc[-1]["Qr"]
+    Qp     = profile.iloc[0]["Qp"]
+
+    CC_ODE_results = x_ret, y_perm, Qr, Qp
+    return CC_ODE_results, profile

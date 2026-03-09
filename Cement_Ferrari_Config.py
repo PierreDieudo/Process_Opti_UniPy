@@ -8,8 +8,8 @@ import pandas as pd
 import tqdm
 import os
 import time
-from collections import deque
 from Optimisation_logger import OptimisationLogger
+from Materials import validate_membrane
 
 
 #the ode solver sometimes returns these warning.Since we already handle incorrect mass balances we can safely ignore them.
@@ -72,8 +72,8 @@ logger = OptimisationLogger(
 )
 
 
-checkpoint_file = "de_checkpoint_forchiara_2.1_constrainedRecPur_mem3_040226.pkl" # Checkpoint file name
-output_filename = 'forchiara_2.1_constrainedRecPur_mem3.txt' # Output file name
+checkpoint_file = "de_checkpoint_DM_C_040326_newODE_lesspopulation.pkl" # Checkpoint file name
+output_filename = 'DM_C_040326_newODE_lesspopulation.txt' # Output file name
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -81,15 +81,18 @@ output_filename = 'forchiara_2.1_constrainedRecPur_mem3.txt' # Output file name
 
 Options = { 
     "Method": "Optimisation",  # Method is either by Brute_Force or Optimisation or Both
-    "Permeance_From_Activation_Energy": False, # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
+    "Permeance_From_Activation_Energy": True, # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
     "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
     "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
     "Purity_Hard_Cap": True,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
+    "Anti_Aging_LowTemp": True, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
     }    
 print(Options) 
 if Options["Method"] == "Both":print(f"Using software path: {filename}; Running both Bruteforce and Optimisation methods") 
 else: print(f"Running the { Options["Method"]} method for path {filename}")
 
+
+print('Warning! Population size decreased to 10 per variable')
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
@@ -99,8 +102,8 @@ Opti_Param = {
     "P_up_2" : [1.1, 15],  # Upper pressure range for the first stage in bar
     #"P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
     #"P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
-    #"Temperature_1" : [-40, 70],  # Temperature range in Celcius
-    #"Temperature_2" : [-40, 70],  # Temperature range in Celcius
+    "Temperature_1" : [-40, 70],  # Temperature range in Celcius
+    "Temperature_2" : [-40, 70],  # Temperature range in Celcius
     }
 
 #--------------------------#
@@ -116,7 +119,8 @@ Membrane_1 = {
     "Pressure_Permeate": 0.22,                 # bar
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [600, 600/150, 600/60, 600], # in GPU [CO2, N2, O2, H2O]
-    "Pressure_Drop": False,
+    "Pressure_Drop": True,
+    "Material": "PIM-1", # Material used - important if getting permeance from activation energies
     }
 
 Membrane_2 = {
@@ -128,7 +132,8 @@ Membrane_2 = {
     "Q_A_ratio": 8,                          
     "Q_A_ratio": 1.92,                      
     "Permeance": [600, 600/150, 600/60, 600],
-    "Pressure_Drop": False,
+    "Pressure_Drop": True,
+    "Material": "PIM-1",
     }
 
 Process_param = {
@@ -148,18 +153,21 @@ Process_param = {
 Component_properties = {
     "Viscosity_param": ([0.0479,0.6112],[0.0466,3.8874],[0.0558,3.8970], [0.03333, -0.23498]),  # Viscosity parameters for each component: slope and intercept for the viscosity correlation wiht temperature (in K) - from NIST
     "Molar_mass": [44.009, 28.0134, 31.999,18.01528],                                           # Molar mass of each component in g/mol"
-    "Activation_Energy_Aged": ([12750,321019],[25310,2186946],[15770,196980],[12750,321019]),   # ([Activation energy - J/mol],[pre-exponential factor - GPU])
-    "Activation_Energy_Fresh": ([2880,16806],[16520,226481],[3770,3599],[2880,16806]),          #Valid only if temperature is -20 C or under - not considered for now
+    "Activation_Energy_Aged": ([12750,321019],[25310,2186946],[15770,196980],[12750,321019]),   # PIM-1 ([Activation energy - J/mol],[pre-exponential factor - GPU])
+    "Activation_Energy_Fresh": ([2880,16806],[16520,226481],[3770,3599],[2880,16806]),          # PIM-1
+    "Activation_Energy_Aged": ([510,629],[9670,1236],[1500,193],[510,629]),   # KIM-1
+    "Activation_Energy_Aged": ([27060,22325381],[33110,3396963],[29000,2409785],[27060,22325381]),   # BMA-TB
+    "Activation_Energy_Aged": ([7700,181],[20300,1045],[16000,1144],[7700,181]),   # Matrimid !Does not age!
     }
 
 Fibre_Dimensions = {
 "D_in" : 600 * 1e-6,    # Inner diameter in m (from um)
 "D_out" : 800 * 1e-6,   # Outer diameter in m (from um)
 }
-  
-J = len(Membrane_1["Permeance"]) #number of components
-
-
+ 
+components = ["CO2", "N2", "O2", "H2O"]
+Component_properties = validate_membrane(Membrane_1, components)
+J = len(components) #number of components
 
 with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
@@ -278,15 +286,16 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             J = len(Membrane["Permeance"]) #number of components
             
             if Options["Permeance_From_Activation_Energy"]: # Obtain Permeance with temperature:
-                for i in range(J):
-                    Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
+                if not Options["Anti_Aging_LowTemp"]: # Aged properties
+                    for i in range(J):
+                        Membrane["Permeance"][i] = Component_properties["Activation_Energy_Aged"][i][1] * np.exp(-Component_properties["Activation_Energy_Aged"][i][0] / (8.314 * Membrane["Temperature"]))
+                else: # Fresh properties
+                    for i in range(J):
+                        Membrane["Permeance"][i] = Component_properties["Activation_Energy_Fresh"][i][1] * np.exp(-Component_properties["Activation_Energy_Fresh"][i][0] / (8.314 * Membrane["Temperature"]))
 
             results, profile = Hub_Connector(Export_to_mass_balance)
             Membrane["Retentate_Composition"],Membrane["Permeate_Composition"],Membrane["Retentate_Flow"],Membrane["Permeate_Flow"] = results
 
-            #debug
-            #print(f"Overall mass balance error of membrane {Membrane["Name"]}: Feed + Sweep  - Retentate - Permeate = {abs(Membrane["Feed_Flow"] + Membrane["Sweep_Flow"] - Membrane["Retentate_Flow"] - Membrane["Permeate_Flow"]):.3e}")
-        
             #Reformat Permeance and Pressure values to the initial units - will find a smarter way to do this later
             Membrane["Permeance"] = [p / ( 3.348 * 1e-10 ) for p in Membrane["Permeance"]]  # convert from mol/m2.s.Pa to GPU
             Membrane["Pressure_Feed"] *= 1e-5  #convert to bar
@@ -514,7 +523,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     def Opti_algorithm():
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file) # Use the savepoints directory
 
-        popsize = 20  # Population size multiplier
+        popsize = 10  # Population size multiplier
         
                 # ----------------- Load checkpoint or midpoint guess -----------------
         def load_checkpoint():
@@ -561,7 +570,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([3.279,18,6.841,8.998])
+                first_guess = np.array([2.75,1.99,4.11,1.34,-18.76,-33.58])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
@@ -586,8 +595,8 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Opti_Param["P_up_2"],  
             #Opti_Param["P_perm_1"],
             #Opti_Param["P_perm_2"],
-            #Opti_Param["Temperature_1"],  
-            #Opti_Param["Temperature_2"],  
+            Opti_Param["Temperature_1"],  
+            Opti_Param["Temperature_2"],  
         ]
         
         # ----------------- Objective function -----------------
@@ -599,8 +608,8 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane_2["Pressure_Feed"] = params[3]
             #Membrane_1["Pressure_Permeate"] = params[4]
             #Membrane_2["Pressure_Permeate"] = params[5]
-            #Membrane_1["Temperature"] = params[-2] + 273.15
-            #Membrane_2["Temperature"] = params[-1] + 273.15
+            Membrane_1["Temperature"] = params[-2] + 273.15
+            Membrane_2["Temperature"] = params[-1] + 273.15
 
             Parameters = (
                 Membrane_1, Membrane_2,
@@ -651,7 +660,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             bounds,
             maxiter=500,  
             popsize=popsize,  
-            tol=5e-3,
+            tol=1e-3,
             callback=callback,
             mutation=(0.5,1.0),
             recombination=0.7,
@@ -667,8 +676,8 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Membrane_2["Pressure_Feed"] = result.x[3]
             #Membrane_1["Pressure_Permeate"] = result.x[4]
             #Membrane_2["Pressure_Permeate"] = result.x[5]
-            #Membrane_1["Temperature"] = result.x[-2] + 273.15
-            #Membrane_2["Temperature"] = result.x[-1] + 273.15
+            Membrane_1["Temperature"] = result.x[-2] + 273.15
+            Membrane_2["Temperature"] = result.x[-1] + 273.15
             Parameters = Membrane_1, Membrane_2, Process_param, Component_properties, Fibre_Dimensions, J
             Economics = Ferrari_Paper_Main(Parameters)
 
