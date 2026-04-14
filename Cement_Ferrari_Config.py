@@ -72,8 +72,8 @@ logger = OptimisationLogger(
 )
 
 
-checkpoint_file = "de_checkpoint_DM_C_040326_newODE_lesspopulation.pkl" # Checkpoint file name
-output_filename = 'DM_C_040326_newODE_lesspopulation.txt' # Output file name
+checkpoint_file = "de_checkpoint_DM_PIM_TMN_Trip_180326.pkl" # Checkpoint file name
+output_filename = 'DM_PIM_TMN_Trip_180326.txt' # Output file name
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -85,32 +85,28 @@ Options = {
     "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
     "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
     "Purity_Hard_Cap": True,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
-    "Anti_Aging_LowTemp": True, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
+    "Anti_Aging_LowTemp": False, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
     }    
 print(Options) 
 if Options["Method"] == "Both":print(f"Using software path: {filename}; Running both Bruteforce and Optimisation methods") 
 else: print(f"Running the { Options["Method"]} method for path {filename}")
 
-
-print('Warning! Population size decreased to 10 per variable')
-
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [0.5, 15], # Flow/Area ratio for the second stage
-    "Q_A_ratio_2" : [1, 20], # Flow/Area ratio for the first stage
-    "P_up_1" : [1.1, 15],  # Upper pressure range for the second stage in bar
-    "P_up_2" : [1.1, 15],  # Upper pressure range for the first stage in bar
+    "Q_A_ratio_1" : [35, 75], # Flow/Area ratio for the second stage
+    "Q_A_ratio_2" : [75, 150], # Flow/Area ratio for the first stage
+    "P_up_1" : [1.1, 10],  # Upper pressure range for the second stage in bar
+    "P_up_2" : [1.1, 10],  # Upper pressure range for the first stage in bar
     #"P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
     #"P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
-    "Temperature_1" : [-40, 70],  # Temperature range in Celcius
-    "Temperature_2" : [-40, 70],  # Temperature range in Celcius
+    "Temperature_1" : [-60, 40],  # Temperature range in Celcius
+    "Temperature_2" : [-60, 40],  # Temperature range in Celcius
     }
 
 #--------------------------#
 #--- Default Parameters ---#
 #--------------------------#
 '''These include parameters that will be modified through the optimisation function'''
-
 Membrane_1 = {
     "Name": 'Membrane_1',
     "Solving_Method": 'CC_ODE',                 # 'CC' or 'CO' - CC is for counter-current, CO is for co-current
@@ -119,8 +115,8 @@ Membrane_1 = {
     "Pressure_Permeate": 0.22,                 # bar
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [600, 600/150, 600/60, 600], # in GPU [CO2, N2, O2, H2O]
-    "Pressure_Drop": True,
-    "Material": "PIM-1", # Material used - important if getting permeance from activation energies
+    "Pressure_Drop": False,
+    "Material": "PIM-TMN-Trip", # Material used - important if getting permeance from activation energies
     }
 
 Membrane_2 = {
@@ -132,23 +128,25 @@ Membrane_2 = {
     "Q_A_ratio": 8,                          
     "Q_A_ratio": 1.92,                      
     "Permeance": [600, 600/150, 600/60, 600],
-    "Pressure_Drop": True,
+    "Pressure_Drop": False,
     "Material": Membrane_1["Material"],
     }
 
 Process_param = {
-"Recycling_Ratio" : 1,      # Ratio of the retentate flow from Membrane 2 that is recycled back to Membrane 1 feed    
-"Target_Purity" : 0.95,     # Target purity of the dry permeate from Membrane 2
-"Target_Recovery" : 0.9,    # Target recovery from Membrane 2 - for now not a hard limit, but a target to be achieved
-"Replacement_rate": 4,      # Replacement rate of the membranes (in yr)
-"Operating_hours": 8000,    # Operating hours per year
-"Lifetime": 25,             # Lifetime of the plant (in yr)
-"Base_Clinker_Production": 9.65e5, #(tn/yr) 
-"Base Plant Cost": 149.8 * 1e6,     # Total direct cost of plant (no CCS) in 2014 money
-"Base_Plant_Primary_Emission": (846)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
-"Base_Plant_Secondary_Emission": (34)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
-"Contingency": 0.3,         # or 0.4 (30% or 40% contingency for process design - based on TRL)
-}
+    "Recycling_Ratio" : 1,      # Ratio of the retentate flow from Membrane 2 that is recycled back to Membrane 1 feed    
+    "Target_Purity" : 0.95,     # Target purity of the dry permeate from Membrane 2
+    "Target_Recovery" : 0.9,    # Target recovery from Membrane 2 - for now not a hard limit, but a target to be achieved
+    "Replacement_rate": 4,      # Replacement rate of the membranes (in yr)
+    "Operating_hours": 8000,    # Operating hours per year
+    "Lifetime": 25,             # Lifetime of the plant (in yr)
+    "Base_Clinker_Production": 9.65e5, #(tn/yr) 
+    "Base_TDC": 149.8 * 1e6,     # Total direct cost of plant (no CCS) in 2014 money
+    "Base_Plant_Primary_Emission": (846)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
+    "Base_Plant_Secondary_Emission": (34)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
+    "Contingency": 0.30,         # or 0.4 (30% or 40% contingency for process design - based on TRL)
+    "Base_OPEX": 43.75 * 1e6,   # OPEX of the base cement plant in eur/y
+    "Carbon_Tax": 100,        # Carbon tax in eur/tCO2"
+    }
 
 Fibre_Dimensions = {
 "D_in" : 600 * 1e-6,    # Inner diameter in m (from um)
@@ -315,7 +313,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # Run iterations for process recycling loop - Specific to this configuration! #
         #-----------------------------------------------------------------------------#
 
-        max_iter = 150      # maximum number of iterations for the recycling loop
+        max_iter = 100      # maximum number of iterations for the recycling loop
         tolerance = 5e-5    # convergence tolerance for the recycling loop
 
         Placeholder_1={ #Intermediade data storage for the recycling loop entering the first membrane used to check for convergence
@@ -560,7 +558,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([2.75,1.99,4.11,1.34,-18.76,-33.58])
+                first_guess = np.array([52.72050, 99.74713, 2.72050, 1.10475, -34.43264, -55.79533])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)

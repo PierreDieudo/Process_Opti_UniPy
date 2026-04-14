@@ -62,8 +62,8 @@ logger = OptimisationLogger(
     log_dir=results_dir,
 )
 
-output_filename = 'SingleMem_3param_forchiara_mem5_220126.txt' # Output file name
-checkpoint_file = "SingleMem_3param_forchiara_mem5_20126.pkl" # Checkpoint file name
+output_filename = 'SingleMem_PIM_TMN_Trip_260326.txt' # Output file name
+checkpoint_file = "SingleMem_PIM_TMN_Trip_260326.txt.pkl" # Checkpoint file name
 
 
 #-------------------------------#
@@ -76,8 +76,8 @@ Options = {
     "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
     "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
     "Purity_Hard_Cap": True,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
-    "Anti_Aging_LowTemp": True, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
-    }     
+    "Anti_Aging_LowTemp": False, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
+    }    
 print(Options) 
 if Options["Method"] == "Both":print(f"Using software path: {filename}; Running both Bruteforce and Optimisation methods") 
 else: print(f"Running the { Options["Method"]} method for path {filename}")
@@ -85,10 +85,10 @@ else: print(f"Running the { Options["Method"]} method for path {filename}")
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [0.5, 10], # Flow/Area ratio for the second stage
-    "P_up_1" : [1.3, 15],  # Upper pressure range for the second stage in bar
-    "Recycling_Ratio" : [0, 0.95],  # Ratio of the retentate flow from the membrane that is recycled back to the feed
-    #"Temperature_1" : [-40, 70],  # Temperature range in Celcius
+    "Q_A_ratio_1" : [300, 1000], # Flow/Area ratio for the second stage
+    "P_up_1" : [1.3, 20],  # Upper pressure range for the second stage in bar
+    "Recycling_Ratio" : [0, 0.5],  # Ratio of the retentate flow from the membrane that is recycled back to the feed
+    "Temperature_1" : [-120, 30],  # Temperature range in Celcius
     }
 
 #--------------------------#
@@ -105,7 +105,7 @@ Membrane_1 = {
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [1000, 1000/200, 1000/80, 1000], # in GPU [CO2, N2, O2, H2O]
     "Pressure_Drop": False,
-    "Material": "PIM-1", # Material used - important if getting permeance from activation energies
+    "Material": "PIM-TMN-Trip", # Material used - important if getting permeance from activation energies
     }
 
 Sweep = {
@@ -130,10 +130,12 @@ Process_param = {
     "Operating_hours": 8000,    # Operating hours per year
     "Lifetime": 25,             # Lifetime of the plant (in yr)
     "Base_Clinker_Production": 9.65e5, #(tn/yr) 
-    "Base Plant Cost": 149.8 * 1e6,     # Total direct cost of plant (no CCS) in 2014 money
+    "Base_TDC": 149.8 * 1e6,     # Total direct cost of plant (no CCS) in 2014 money
     "Base_Plant_Primary_Emission": (846)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
     "Base_Plant_Secondary_Emission": (34)*9.65e5 ,# (kgCo2/tn_clk to kgCO2/yr) primary emissions of the base cement plant per year 
-    "Contingency": 0.3,         # or 0.4 (30% or 40% contingency for process design - based on TRL)
+    "Contingency": 0.30,         # or 0.4 (30% or 40% contingency for process design - based on TRL)
+    "Base_OPEX": 43.75 * 1e6,   # OPEX of the base cement plant in eur/y
+    "Carbon_Tax": 100,        # Carbon tax in eur/tCO2"
     }
 
 Fibre_Dimensions = {
@@ -590,7 +592,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Opti_Param["Recycling_Ratio"],
             Opti_Param["Q_A_ratio_1"],  
             Opti_Param["P_up_1"],  
-            #Opti_Param["Temperature_1"],  
+            Opti_Param["Temperature_1"],  
   
         ]
         
@@ -600,7 +602,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             Process_param["Recycling_Ratio"] = params[0]
             Membrane_1["Q_A_ratio"] = params[1]
             Membrane_1["Pressure_Feed"] = params[2]
-            #Membrane_1["Temperature"] = params[-1] + 273.15
+            Membrane_1["Temperature"] = params[-1] + 273.15
 
             Parameters = (Membrane_1,Process_param, Component_properties, Fibre_Dimensions, J)
 
@@ -645,7 +647,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         result = differential_evolution(
             objective_function,
             bounds,
-            maxiter=1000,  
+            maxiter=500,  
             popsize=popsize,  
             tol=1e-3,
             callback=callback,

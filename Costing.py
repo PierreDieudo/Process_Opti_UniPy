@@ -196,11 +196,31 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
         Cryo_Cost = math.exp(Cryogenic_cooler_param[0] - Cryogenic_cooler_param[1] * (Cryo[1] - 273.15)) #$(2017) per GJ
         TAC_Cryo += Cryo_Cost * Cryo[0] * Process_param["Operating_hours"] * 0.8865 #convert to cost per year (eur(2017)/yr)
     TAC_Cryo *= Index_2014/Index_2017 #convert to 2014 money
+    Cryo_TPC = 0.31 * TAC_Cryo * Process_param["Lifetime"] # Capital cost of cryogenic cooling. Estimated from cryogenic paper to be around 31% of the total cost of the cryogenic system.
+    Cryo_Opex = 0.69 * TAC_Cryo # Operational cost of cryogenic cooling, estimated from cryogenic paper to be around 69% of the total cost of the cryogenic system.
+    Cryo_Capex = Cryo_TPC /(( 1 + Process_param["Contingency"]) * ( 1 + Indirect_Cost + Owner_Cost + Project_Contingency)) # Total plant cost of the cryogenic system
+    
+    #Adjust economic indicators with the cryogenic system costs:
+    Capex_tot_2014 += Cryo_Capex
+    TPC += Cryo_TPC
+    Variable_Opex += Cryo_Opex
+    Total_Opex += Cryo_Opex
+
+
+    ### Emissions due to cryognenic systems:
+    Cryo_Energy = 0
+    for Cryo in Process_specs["Cryogenics"]:
+        T = Cryo[1]
+        Cryo_COP = 1.93e-8*(T**5) -2.30e-5*(T**4) +1.10e-2*(T**3) -2.61*(T**2) + 3.11e2*T - 1.48e4
+        Cryo_Energy += Cryo[0] * 1e6 /3600  * Process_param["Operating_hours"] / Cryo_COP #from GJ/hr to kWh/yr including the coefficient of performance
+
+    Power_Consumption += Cryo_Energy
+
 
     TAC_Dehydration = Process_specs["Dehydration"] * 1e-3 * Dehydration_Cost * Process_param["Operating_hours"] # ($2018/yr) cost of removing N tons of H2O from compression train at 30 bar per year.
     TAC_Dehydration *= Index_2014/Index_2018 #convert to 2014 money
 
-    TAC_other = TAC_Cryo + TAC_Dehydration
+    TAC_other = TAC_Dehydration
 
 
     '''-----------------------------------#
@@ -221,9 +241,9 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     Primary_emission *= Process_param["Operating_hours"] * 3600 # convert to mol/yr
     Primary_emission *= 44.01 * 1e-6 # convert to tonnes/yr (44.01 g/mol)    
     
-    Secondary_Emission = Power_Consumption * Indirect_Emission_rate # (tonnes/yr) CO2 emissions from electricity consumption
-    Equiv_Emission = Primary_emission + Secondary_Emission
-    
+    Secondary_Emission_CCS = Power_Consumption * Indirect_Emission_rate # (tonnes/yr) CO2 emissions from electricity consumption
+    Equiv_Emission = Primary_emission + Secondary_Emission_CCS
+    print(f'Primary emission: {Primary_emission:.2f} tonnes/yr, Secondary emission from electricity consumption: {Secondary_Emission_CCS:.2f} tonnes/yr, Total equivalent emission: {Equiv_Emission:.2f} tonnes/yr')
 
     Penalty_CO2_emission = Equiv_Emission * Carbon_Tax #eur/yr 
     
@@ -233,14 +253,7 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
 
     Penalty = Penalty_purity + Penalty_CO2_emission + Extra_Penalty # Total penalty for purity and CO2 emissions
 
-    ### Emissions due to cryognenic systems:
-    Cryo_Energy = 0
-    for Cryo in Process_specs["Cryogenics"]:
-        T = Cryo[1]
-        Cryo_COP = 1.93e-8*(T**5) -2.30e-5*(T**4) +1.10e-2*(T**3) -2.61*(T**2) + 3.11e2*T - 1.48e4
-        Cryo_Energy += Cryo[0] * 1e6 /3600  * Process_param["Operating_hours"] / Cryo_COP #from GJ/hr to kWh/yr including the coefficient of performance
 
-    Power_Consumption += Cryo_Energy
     '''------------------------'''
 
     ### Estimate cost of carbon capture process as a TAC
@@ -251,15 +264,54 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
 
     ### Cost of Capture ###
     Total_Captured= Process_specs["Feed"]["Feed_Composition"][0] * Process_specs["Feed"]["Feed_Flow"] * Process_param["Operating_hours"] * 3600 * Process_specs["Recovery"] * Comp_properties["Molar_mass"][0] * 1e-6 # Total CO2 captured in tonnes per year
-
-    Cost_of_Avoidance = TAC_CC / ( Total_Captured- Secondary_Emission) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
-    Cost_of_Capture = TAC_CC / ( Total_Captured) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
-
     ### Specific Primary Energy Consumption for CO2 Avoided ###
     q_eq_ccs = Power_Consumption*3.6/Electrivity_Generation_Efficiency #primary consumption of the CCS plant (in MJ/yr)
-    e_eq_ccs = (Primary_emission + Secondary_Emission) * 1000 #kgco2/yr
+    e_eq_ccs = (Primary_emission + Secondary_Emission_CCS) * 1000 + Process_param["Base_Plant_Secondary_Emission"] #kgco2/yr
     e_eq_base = Process_param["Base_Plant_Primary_Emission"]+Process_param["Base_Plant_Secondary_Emission"] #base plant total emission in kgCO2/yr
-    SPECCA = (q_eq_ccs)/(e_eq_base-(e_eq_ccs+Process_param["Base_Plant_Secondary_Emission"])) #MJ/kgCO2
+    SPECCA = (q_eq_ccs)/(e_eq_base-(e_eq_ccs)) #MJ/kgCO2
+
+    ''' Obtaim cost of Clinker using CEMCAP Excel methodology '''
+    '''
+    TPC_cem,          # eur - total plant cost cement plant
+    TPC_capt,         # eur - total plant cost capture plant
+    carbon_tax,       # eur/t CO2 - applied to net CO2 emissions
+    var_opex,         # eur/yr - total variable OPEX (consumables + O&M)
+    fixed_opex,       # eur/yr - total fixed OPEX (insurance + maintenance + labour)
+    clinker_prod_ref, # t/h  - reference clinker production rate
+    case="DM"
+    '''
+    from COC_breakeven import find_breakeven
+
+    TPC_base =  Process_param["Base_TDC"] * ( 1 + Indirect_Cost + Owner_Cost + Project_Contingency)
+    Breakeven_params_base = {
+        "TPC_cem" : TPC_base, # Total Plant Cost of the base plant (no CCS)
+        "carbon_tax" : Process_param["Carbon_Tax"] * (e_eq_base)/1000, # Carbon tax applied to the plant in eur/yr
+        "opex"    : Process_param["Base_OPEX"], # Total OPEX of the base plant in eur/yr
+    }
+
+    Breakeven_params_capt = {
+        "TPC_cem"   : TPC_base,
+        "TPC_capt"  : TPC,
+        "carbon_tax": Process_param["Carbon_Tax"] * (e_eq_ccs)/1000,
+        "opex"      : Process_param["Base_OPEX"] + Total_Opex,
+    }
+
+    COC_base, COC_CCS, COC_base_0, COC_CCS_0 = find_breakeven(Process_param, Breakeven_params_base, Breakeven_params_capt) # Costs of clinker in eur/tn
+
+    print(f"COC base plant  (no tax):  {COC_base_0:.2f} EUR/t")
+    print(f"COC full plant  (no tax):  {COC_CCS_0:.2f} EUR/t")
+    print(f"COC base plant  (w/ tax):  {COC_base:.2f} EUR/t")
+    print(f"COC full plant  (w/ tax):  {COC_CCS:.2f} EUR/t")
+    print(f"CCS delta       (no tax):  {COC_CCS_0 - COC_base_0:.2f} EUR/t")
+    print(f"CCS delta       (w/ tax):  {COC_CCS   - COC_base:.2f} EUR/t")
+    print(f"Base equivalent emission: {e_eq_base/Process_param["Base_Clinker_Production"]:.2f} kgCO2/tclk, CCS equivalent emission: {e_eq_ccs/Process_param["Base_Clinker_Production"]:.2f} kgCO2/tclk")
+
+    Cost_of_Capture = (TAC_CC) / (Total_Captured) 
+    Cost_of_Avoidance = (COC_CCS_0 - COC_base_0) / ( (e_eq_base-e_eq_ccs)/1000/Process_param["Base_Clinker_Production"])
+
+    #Cost_of_Avoidance = TAC_CC / ( Total_Captured - Secondary_Emission_CCS ) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
+    #Cost_of_Capture = TAC_CC / ( Total_Captured) #TAC / (CO2 captured - CO2 produced by CCS) = eur per tonne of CO2 captured
+
     Economics = {
         "Evaluation": Evaluation,
         "Purity": float(Process_specs["Purity"]),  # Purity of the product
@@ -273,7 +325,7 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
         "TAC_Cryo": TAC_Cryo,  # Total Annualised Cost of Cryogenic cooling
         "TAC_Dehydration": TAC_Dehydration,
         "Direct_CO2_emission": Primary_emission,  # CO2 emissions from the process in tonnes per year
-        "Indirect_CO2_emission": Secondary_Emission,  # CO2 emissions from electricity consumption in tonnes per year"
+        "Indirect_CO2_emission": Secondary_Emission_CCS,  # CO2 emissions from electricity consumption in tonnes per year"
         "C_compressor": C_compressor,  # Capital cost of compressors
         "C_vacuum_pump": C_vacuum_pump,
         "C_vacuum_cooler": C_vacuum_cooling,
@@ -293,6 +345,7 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
         "Cost_of_Capture": Cost_of_Capture,
         "Cost_of_Avoidance": Cost_of_Avoidance,
         "SPECCA": SPECCA,
+        "COC": COC_CCS, # Cost of clinker in eur/t obtained from the breakeven function in COC_breakeven.py
 
         }
 

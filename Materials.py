@@ -3,7 +3,7 @@
 # Central database for membrane material properties and component properties.
 #
 # To add a new component to the master list:
-#   1. Append its name to COMPONENTS below
+#   1. Append its name to components below
 #   2. Append its values to each property in Component_properties
 #   3. Append its [Ea, P0] (or None if unavailable) to each material entry
 #
@@ -16,13 +16,13 @@
 # Defines the order of all data in this file.
 # The main script selects an active subset for each process.
 # -----------------------------------------------------------------------------
-COMPONENTS = ["CO2", "N2", "O2", "H2O"]
+components = ["CO2", "N2", "O2", "H2O"]
 
 # -----------------------------------------------------------------------------
 # Material Database
 # Each material contains:
 #   - Activation_Energy_Aged:  tuple of [Ea (J/mol), P0 (GPU)] per component,
-#                              following COMPONENTS order. Use None if unavailable.
+#                              following components order. Use None if unavailable.
 #   - Activation_Energy_Fresh: same, or None if the material does not age
 #                              (in which case aged properties are used as fallback)
 # -----------------------------------------------------------------------------
@@ -43,19 +43,19 @@ Material_Database = {
     },
     "KIM-1": {
         "Activation_Energy_Aged": (
-            [510,  629],        # CO2
-            [9670, 1236],       # N2
-            [1500, 193],        # O2
-            [510,  629],        # H2O
+            [510,  314],        # CO2
+            [9670, 618],       # N2
+            [1500, 97],        # O2
+            [510,  314],        # H2O
         ),
         "Activation_Energy_Fresh": None,    # No fresh data — falls back to aged
     },
     "BMA-TB": {
         "Activation_Energy_Aged": (
-            [27060, 22325381],  # CO2
-            [33110, 3396963],   # N2
-            [29000, 2409785],   # O2
-            [27060, 22325381],  # H2O
+            [27060, 28772837],  # CO2
+            [33110, 13732131],   # N2
+            [29000, 6901840],   # O2
+            [27060, 28772837],  # H2O
         ),
         "Activation_Energy_Fresh": None,
     },
@@ -74,11 +74,22 @@ Material_Database = {
             [7700,  181],       # H2O
         ),
     },
+    "PIM-TMN-Trip": {
+        "Activation_Energy_Aged": ( # not mentioned in paper, but it is likely fresh properties)
+            [-7695,620],  # CO2
+            [4435,4734],   # N2
+            [-3180, 716],   # O2
+            [-7695,620],  # H2O
+        ),
+        "Activation_Energy_Fresh": None,
+    },
+
+
 }
 
 # -----------------------------------------------------------------------------
 # Component Properties
-# Material-independent physical properties, ordered by COMPONENTS.
+# Material-independent physical properties, ordered by components.
 # -----------------------------------------------------------------------------
 Component_properties = {
     "Molar_mass": [44.009, 28.0134, 31.999, 18.01528],     # g/mol
@@ -116,11 +127,11 @@ def validate_membrane(Membrane, components):
     for those components only.
 
     Checks performed:
-      - All active components exist in the master COMPONENTS list
+      - All active components exist in the master components list
       - Membrane permeance list length matches the active component count
       - Material exists in Material_Database
       - No None entries in activation energy data for active components
-      - Component_properties arrays are consistent with master COMPONENTS list
+      - Component_properties arrays are consistent with master components list
 
     Returns:
       membrane_properties (dict):
@@ -130,15 +141,15 @@ def validate_membrane(Membrane, components):
                              (matches numpy slicing used in mixture_visc)
     """
     # --- Check active components are known ---
-    unknown = [c for c in components if c not in COMPONENTS]
+    unknown = [c for c in components if c not in components]
     if unknown:
         raise ValueError(
             f"Unknown components {unknown}. "
-            f"Master COMPONENTS list is: {COMPONENTS}"
+            f"Master components list is: {components}"
         )
 
     # --- Get indices of active components in master list ---
-    indices = [COMPONENTS.index(c) for c in components]
+    indices = [components.index(c) for c in components]
 
     # --- Check permeance list length ---
     if len(Membrane["Permeance"]) != len(components):
@@ -161,12 +172,12 @@ def validate_membrane(Membrane, components):
                 f"for active components: {missing}"
             )
 
-    # --- Check Component_properties consistency with master COMPONENTS ---
+    # --- Check Component_properties consistency with master components ---
     for prop_name, values in Component_properties.items():
-        if len(values) != len(COMPONENTS):
+        if len(values) != len(components):
             raise ValueError(
                 f"Component_properties['{prop_name}'] has {len(values)} entries "
-                f"but master COMPONENTS has {len(COMPONENTS)}: {COMPONENTS}. "
+                f"but master components has {len(components)}: {components}. "
                 f"Please update materials.py."
             )
 

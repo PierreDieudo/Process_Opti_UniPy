@@ -22,7 +22,7 @@ def Hub_Connector(Export_to_mass_balance): #general because it will call the cor
     Membrane["Permeance"] = [p * 3.348 * 1e-10 for p in Membrane["Permeance"]]  # convert from GPU to mol/m2.s.Pa
     Membrane["Pressure_Feed"] *= 1e5  #convert to Pa
     Membrane["Pressure_Permeate"] *= 1e5  
-    Membrane["Total_Flow"]  =Membrane["Feed_Flow"]+Membrane["Sweep_Flow"]
+    Membrane["Total_Flow"]  = Membrane["Feed_Flow"]+Membrane["Sweep_Flow"]
 
     #number of components
     J = len(Membrane["Feed_Composition"])
@@ -36,7 +36,7 @@ def Hub_Connector(Export_to_mass_balance): #general because it will call the cor
     if Membrane["Sweep_Flow"]!=0 and abs(sum(Membrane["Sweep_Composition"]) - 1) > 1e-8:
         raise ValueError(f"Initial mole fractions do not sum to 1 ({(sum(Membrane["Sweep_Composition"])):.3e})")
   
-
+    '''
     #Determines Module length and number of fibers to minimise pressure drop (Shao, Huang, 2006)
     def module_length_calc(L):
             R = 8.314 # J/(mol.K) - gas constant
@@ -59,16 +59,18 @@ def Hub_Connector(Export_to_mass_balance): #general because it will call the cor
         # Minimise the difference between max_delta and 0.4
         return 0.4 - max_delta
 
-    result = minimize_scalar(objective, bounds=(3e-1, 0.5), method='bounded')
+    result = minimize_scalar(objective, bounds=(1e-1, 2), method='bounded')
     if result.success:
         Fibre_Dimensions['Length'] = float(result.x)
         #print(f'Optimised module length: {Fibre_Dimensions['Length']:.4f} m')
     else:
         print("Optimisation failed to find a suitable module length")
         Fibre_Dimensions['Length'] = 0.1 #m - module length
-    Fibre_Dimensions['Length'] = 0.5 #m - module length
+    '''
+
     fibre_area = math.pi * Fibre_Dimensions['Length'] * Fibre_Dimensions["D_out"] #m2
     Fibre_Dimensions["Number_Fibre"] =  Membrane["Area"] / fibre_area #number of fibres in the module
+    Fibre_Dimensions["Number_Module"] = math.ceil(Membrane["Area"] / Fibre_Dimensions["A_module"]) #number of modules in the system"]
 
     #Solving the mass balance (for now humid conditions are not considered)
     vars = Membrane, Component_properties, Fibre_Dimensions
@@ -84,11 +86,18 @@ def Hub_Connector(Export_to_mass_balance): #general because it will call the cor
         from CO_Molten import mass_balance_CO_Molten
         return mass_balance_CO_Molten(vars)
     elif Membrane["Solving_Method"] == 'CO_ODE':
-        from CO_ODE import mass_balance_CO_ODE
+        from CO_ODE_IVP import mass_balance_CO_ODE
         return mass_balance_CO_ODE(vars)
     elif Membrane["Solving_Method"] == 'CC_ODE':
         from CC_ODE import mass_balance_CC_ODE
         return mass_balance_CC_ODE(vars)
+    elif Membrane["Solving_Method"] == 'CC_ODE_BVP':
+        if not Membrane["Pressure_Drop"]:
+            from CC_ODE_BVP import mass_balance_CC_ODE_BVP
+            return mass_balance_CC_ODE_BVP(vars)
+        else: 
+            from CC_ODE_BVP_dP import mass_balance_CC_ODE_BVP_dP
+            return mass_balance_CC_ODE_BVP_dP(vars)
     else:
         raise ValueError("Solving_Method not recognised")
 
