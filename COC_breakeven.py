@@ -2,7 +2,7 @@ from scipy.optimize import brentq
 
 def find_breakeven(Process_param, Breakeven_params_base, Breakeven_params_capt):
     
-    print(Breakeven_params_capt)
+    #print(Breakeven_params_capt)
     """
     Computes the breakeven cost of clinker (EUR/t) for both cases,
     with and without carbon tax.

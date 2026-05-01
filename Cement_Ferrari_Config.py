@@ -8,6 +8,7 @@ import pandas as pd
 import tqdm
 import os
 import time
+import math
 from Optimisation_logger import OptimisationLogger
 from Materials import validate_membrane
 
@@ -72,8 +73,8 @@ logger = OptimisationLogger(
 )
 
 
-checkpoint_file = "de_checkpoint_DM_PIM_TMN_Trip_180326.pkl" # Checkpoint file name
-output_filename = 'DM_PIM_TMN_Trip_180326.txt' # Output file name
+checkpoint_file = "de_checkpoint_DM_polaris_210426.pkl" # Checkpoint file name
+output_filename = 'DM_Polaris_210426.txt' # Output file name
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -93,14 +94,14 @@ else: print(f"Running the { Options["Method"]} method for path {filename}")
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [35, 75], # Flow/Area ratio for the second stage
-    "Q_A_ratio_2" : [75, 150], # Flow/Area ratio for the first stage
+    "Q_A_ratio_1" : [5, 250], # Flow/Area ratio for the second stage
+    "Q_A_ratio_2" : [5, 25], # Flow/Area ratio for the first stage
     "P_up_1" : [1.1, 10],  # Upper pressure range for the second stage in bar
     "P_up_2" : [1.1, 10],  # Upper pressure range for the first stage in bar
     #"P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
     #"P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
-    "Temperature_1" : [-60, 40],  # Temperature range in Celcius
-    "Temperature_2" : [-60, 40],  # Temperature range in Celcius
+    "Temperature_1" : [-60, 50],  # Temperature range in Celcius
+    "Temperature_2" : [-60, 50],  # Temperature range in Celcius
     }
 
 #--------------------------#
@@ -116,7 +117,7 @@ Membrane_1 = {
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [600, 600/150, 600/60, 600], # in GPU [CO2, N2, O2, H2O]
     "Pressure_Drop": False,
-    "Material": "PIM-TMN-Trip", # Material used - important if getting permeance from activation energies
+    "Material": "Polaris", # Material used - important if getting permeance from activation energies
     }
 
 Membrane_2 = {
@@ -149,9 +150,22 @@ Process_param = {
     }
 
 Fibre_Dimensions = {
-"D_in" : 600 * 1e-6,    # Inner diameter in m (from um)
-"D_out" : 800 * 1e-6,   # Outer diameter in m (from um)
-}
+    "D_in" : 600 * 1e-6, # Inner diameter in m (from mm)
+    "D_out" : 800 * 1e-6, # Outer diameter in m (from mm)
+    "Volume_Packing": 0.5, # (m3/m3) Volume packing of the fibres in the module
+    "Fibre_per_Module": 250000, # Number of fibres in a module
+    "Length": 1, # Length of the module in m
+    }
+
+# Calculate module dimensions based on the fibre dimensions and packing
+D_Module = 2 * math.sqrt((Fibre_Dimensions["D_out"]/2)**2*Fibre_Dimensions["Fibre_per_Module"]/Fibre_Dimensions["Volume_Packing"]) # Diameter of the module in m
+D_hydraulic = D_Module * (1/ Fibre_Dimensions["Volume_Packing"] - 1)# Hydraulic diameter in m
+A_module = Fibre_Dimensions["Fibre_per_Module"] * Fibre_Dimensions["Length"] * math.pi * Fibre_Dimensions["D_out"] # Membrane area of a module in m2
+
+# Update the fibre dimensions with the calculated module dimensions
+Fibre_Dimensions["D_Module"] = D_Module
+Fibre_Dimensions["D_hydraulic"] = D_hydraulic
+Fibre_Dimensions["A_module"] = A_module
  
 components = ["CO2", "N2", "O2", "H2O"]
 Component_properties = validate_membrane(Membrane_1, components)

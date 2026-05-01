@@ -70,7 +70,7 @@ def Hub_Connector(Export_to_mass_balance): #general because it will call the cor
 
     fibre_area = math.pi * Fibre_Dimensions['Length'] * Fibre_Dimensions["D_out"] #m2
     Fibre_Dimensions["Number_Fibre"] =  Membrane["Area"] / fibre_area #number of fibres in the module
-    Fibre_Dimensions["Number_Module"] = math.ceil(Membrane["Area"] / Fibre_Dimensions["A_module"]) #number of modules in the system"]
+    Fibre_Dimensions["Number_Module"] = math.ceil(Membrane["Area"] / Fibre_Dimensions["A_module"]) #number of modules in the system"
 
     #Solving the mass balance (for now humid conditions are not considered)
     vars = Membrane, Component_properties, Fibre_Dimensions
@@ -86,18 +86,26 @@ def Hub_Connector(Export_to_mass_balance): #general because it will call the cor
         from CO_Molten import mass_balance_CO_Molten
         return mass_balance_CO_Molten(vars)
     elif Membrane["Solving_Method"] == 'CO_ODE':
-        from CO_ODE_IVP import mass_balance_CO_ODE
-        return mass_balance_CO_ODE(vars)
+        if not Membrane["Pressure_Drop"]:
+            from CO_ODE_IVP import mass_balance_CO_ODE
+            return mass_balance_CO_ODE(vars)
+        else: 
+            from CO_ODE_BVP_dP import mass_balance_CO_ODE_BVP_dP
+            return mass_balance_CO_ODE_BVP_dP(vars)
     elif Membrane["Solving_Method"] == 'CC_ODE':
-        from CC_ODE import mass_balance_CC_ODE
-        return mass_balance_CC_ODE(vars)
-    elif Membrane["Solving_Method"] == 'CC_ODE_BVP':
         if not Membrane["Pressure_Drop"]:
             from CC_ODE_BVP import mass_balance_CC_ODE_BVP
             return mass_balance_CC_ODE_BVP(vars)
         else: 
             from CC_ODE_BVP_dP import mass_balance_CC_ODE_BVP_dP
             return mass_balance_CC_ODE_BVP_dP(vars)
+    elif Membrane["Solving_Method"] == 'Chiara':
+        if not Membrane["Pressure_Drop"]:
+           from Chiara_dPerm_dz import mass_balance_CC_Chiara_dPerm_dz
+           return mass_balance_CC_Chiara_dPerm_dz(vars)
+        else:
+            from Chiara_dPerm_dz_dP import mass_balance_CC_Chiara_dPerm_dz_dP
+            return mass_balance_CC_Chiara_dPerm_dz_dP(vars)
     else:
         raise ValueError("Solving_Method not recognised")
 

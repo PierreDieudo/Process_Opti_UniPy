@@ -75,11 +75,20 @@ Material_Database = {
         ),
     },
     "PIM-TMN-Trip": {
-        "Activation_Energy_Aged": ( # not mentioned in paper, but it is likely fresh properties)
+        "Activation_Energy_Aged": (
             [-7695,620],  # CO2
             [4435,4734],   # N2
             [-3180, 716],   # O2
             [-7695,620],  # H2O
+        ),
+        "Activation_Energy_Fresh": None,
+    },
+    "Polaris": { #https://doi.org/10.1016/j.apenergy.2019.01.130
+        "Activation_Energy_Aged": (
+            [0,1000],    # CO2
+            [6041.575, 211.435],   # N2
+            [6041.575, 211.435],    # O2
+            [0, 1000],    # H2O
         ),
         "Activation_Energy_Fresh": None,
     },

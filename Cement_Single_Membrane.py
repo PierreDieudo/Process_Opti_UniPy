@@ -139,9 +139,13 @@ Process_param = {
     }
 
 Fibre_Dimensions = {
-"D_in" : 600 * 1e-6,    # Inner diameter in m (from um)
-"D_out" : 800 * 1e-6,   # Outer diameter in m (from um)
-}
+    "D_in" : 600 * 1e-6, # Inner diameter in m (from mm)
+    "D_out" : 800 * 1e-6, # Outer diameter in m (from mm)
+    "D_Module" : 0.375*2, # Diameter of the module in m
+    "Length": 0.5, # Length of the module in m
+    "D_hydraulic": 7.98403e-4, # Hydraulic diameter in m (per module - careful with flowrate in pressure drop function)
+    "A_module": 1257, # Cross-sectional area of a module in m2
+    }
   
 components = ["CO2", "N2", "O2", "H2O"]
 Component_properties = validate_membrane(Membrane_1, components)

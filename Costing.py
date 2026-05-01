@@ -243,12 +243,12 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     
     Secondary_Emission_CCS = Power_Consumption * Indirect_Emission_rate # (tonnes/yr) CO2 emissions from electricity consumption
     Equiv_Emission = Primary_emission + Secondary_Emission_CCS
-    print(f'Primary emission: {Primary_emission:.2f} tonnes/yr, Secondary emission from electricity consumption: {Secondary_Emission_CCS:.2f} tonnes/yr, Total equivalent emission: {Equiv_Emission:.2f} tonnes/yr')
+    #print(f'Primary emission: {Primary_emission:.2f} tonnes/yr, Secondary emission from electricity consumption: {Secondary_Emission_CCS:.2f} tonnes/yr, Total equivalent emission: {Equiv_Emission:.2f} tonnes/yr')
 
     Penalty_CO2_emission = Equiv_Emission * Carbon_Tax #eur/yr 
     
     if Options["Extra_Recovery_Penalty"] and (Options["Recovery_Soft_Cap"][1] > Process_specs["Recovery"]) > 0: # Extra penalty for recovery under 90% to encourage high recovery rates
-        Extra_Penalty = 5e10 * (0.90 - Process_specs["Recovery"])
+        Extra_Penalty = 5e9 * (0.90 - Process_specs["Recovery"])
     else : Extra_Penalty = 0
 
     Penalty = Penalty_purity + Penalty_CO2_emission + Extra_Penalty # Total penalty for purity and CO2 emissions
@@ -297,14 +297,6 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     }
 
     COC_base, COC_CCS, COC_base_0, COC_CCS_0 = find_breakeven(Process_param, Breakeven_params_base, Breakeven_params_capt) # Costs of clinker in eur/tn
-
-    print(f"COC base plant  (no tax):  {COC_base_0:.2f} EUR/t")
-    print(f"COC full plant  (no tax):  {COC_CCS_0:.2f} EUR/t")
-    print(f"COC base plant  (w/ tax):  {COC_base:.2f} EUR/t")
-    print(f"COC full plant  (w/ tax):  {COC_CCS:.2f} EUR/t")
-    print(f"CCS delta       (no tax):  {COC_CCS_0 - COC_base_0:.2f} EUR/t")
-    print(f"CCS delta       (w/ tax):  {COC_CCS   - COC_base:.2f} EUR/t")
-    print(f"Base equivalent emission: {e_eq_base/Process_param["Base_Clinker_Production"]:.2f} kgCO2/tclk, CCS equivalent emission: {e_eq_ccs/Process_param["Base_Clinker_Production"]:.2f} kgCO2/tclk")
 
     Cost_of_Capture = (TAC_CC) / (Total_Captured) 
     Cost_of_Avoidance = (COC_CCS_0 - COC_base_0) / ( (e_eq_base-e_eq_ccs)/1000/Process_param["Base_Clinker_Production"])

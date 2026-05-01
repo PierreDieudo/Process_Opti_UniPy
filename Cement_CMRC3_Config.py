@@ -4,10 +4,10 @@ from Hub import Hub_Connector
 from UNISIMConnect import UNISIMConnector
 from scipy.optimize import differential_evolution  
 import pandas as pd  
+import math
 import tqdm
 import os
 import time
-from collections import deque
 from Optimisation_logger import OptimisationLogger
 from Materials import validate_membrane
 
@@ -60,8 +60,8 @@ logger = OptimisationLogger(
     log_dir=results_dir,
 )
 
-checkpoint_file = "de_checkpoint_desktop_CRMC3_9params_130226.pkl" # Checkpoint file name
-output_filename = 'CRMC3_desktop_9param_130226.txt'
+checkpoint_file = "de_checkpoint_desktop_CRMC3_polaris_220426.pkl" # Checkpoint file name
+output_filename = 'CRMC3_desktop_CRMC3_polaris_220426.txt'
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -73,7 +73,7 @@ Options = {
     "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
     "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
     "Purity_Hard_Cap": True,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
-    "Anti_Aging_LowTemp": True, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
+    "Anti_Aging_LowTemp": False, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
     }  
 
 print(Options) 
@@ -83,9 +83,9 @@ else: print(f"Running the { Options["Method"]} method for path {filename}")
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [1, 15], # Flow/Area ratio
+    "Q_A_ratio_1" : [0.5, 10], # Flow/Area ratio
     "Q_A_ratio_2" : [0.5, 10],  
-    "Q_A_ratio_3" : [1, 20], 
+    "Q_A_ratio_3" : [0.5, 10], 
 
     "P_up_1" : [1, 10],  # Feed pressure range  in bar    
     "P_up_2" : [1, 10],  
@@ -95,9 +95,9 @@ Opti_Param = {
     #"P_perm_2" : [0.22, 1], 
     #"P_perm_3" : [0.22, 1], 
 
-    "Temperature_1" : [-40, 40],  # Temperature range in Celcius
-    "Temperature_2" : [-40, 40],  
-    "Temperature_3" : [-40, 40], 
+    "Temperature_1" : [-40, 50],  # Temperature range in Celcius
+    "Temperature_2" : [-40, 50],  
+    "Temperature_3" : [-40, 50], 
 }
 
 
@@ -114,7 +114,7 @@ Membrane_1 = {
     "Q_A_ratio": 3.7170,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [360, 13, 60, 360],        # GPU
     "Pressure_Drop": False,
-    "Material": "PIM-1", # Material used - important if getting permeance from activation energies
+    "Material": "Polaris", # Material used - important if getting permeance from activation energies
     }
 
 Membrane_2 = {
@@ -158,9 +158,22 @@ Process_param = {
 }
 
 Fibre_Dimensions = {
-    "D_in" : 150 * 1e-6,    # Inner diameter in m (from um)
-    "D_out" : 300 * 1e-6,   # Outer diameter in m (from um)
+    "D_in" : 600 * 1e-6, # Inner diameter in m (from mm)
+    "D_out" : 800 * 1e-6, # Outer diameter in m (from mm)
+    "Volume_Packing": 0.5, # (m3/m3) Volume packing of the fibres in the module
+    "Fibre_per_Module": 250000, # Number of fibres in a module
+    "Length": 1, # Length of the module in m
     }
+
+# Calculate module dimensions based on the fibre dimensions and packing
+D_Module = 2 * math.sqrt((Fibre_Dimensions["D_out"]/2)**2*Fibre_Dimensions["Fibre_per_Module"]/Fibre_Dimensions["Volume_Packing"]) # Diameter of the module in m
+D_hydraulic = D_Module * (1/ Fibre_Dimensions["Volume_Packing"] - 1)# Hydraulic diameter in m
+A_module = Fibre_Dimensions["Fibre_per_Module"] * Fibre_Dimensions["Length"] * math.pi * Fibre_Dimensions["D_out"] # Membrane area of a module in m2
+
+# Update the fibre dimensions with the calculated module dimensions
+Fibre_Dimensions["D_Module"] = D_Module
+Fibre_Dimensions["D_hydraulic"] = D_hydraulic
+Fibre_Dimensions["A_module"] = A_module
 
 components = ["CO2", "N2", "O2", "H2O"]
 Component_properties = validate_membrane(Membrane_1, components)
@@ -532,7 +545,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
     
         Expanders = [(Duties.get_cell_value('H27')),(Duties.get_cell_value('H33'))] #Two or three expanders depending on the wether mem1 pre conditioning train has an expander or not
         if to_bar(Membrane_2["Pressure_Feed"]) > to_bar(Membrane_1["Pressure_Feed"]):
-            Expanders.append(Duties.get_cell_value('H30'))
+            Expanders.append(Duties.get_cell_value('H30')) if Duties.get_cell_value('H30') is not None and Duties.get_cell_value('H30') > 0 else None
 
         Heaters = [(Duties.get_cell_value('I27'))] #One or two expanders depending on the wether mem1 pre conditioning train has an expander or not
         if to_bar(Membrane_2["Pressure_Feed"]) > to_bar(Membrane_1["Pressure_Feed"]):
@@ -577,10 +590,8 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             return obj
 
         Process_specs = replace_none_with_zero(Process_specs)    
-
         from Costing import Costing
         Economics = Costing(Process_specs, Process_param, Component_properties, Options)
-        
         return Economics
 
     #-------------------------------#
@@ -639,7 +650,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([4.45,8.4416,2.0569,3.04339,3.1847541,2.0316,8.8173,17.82055,-39.733])
+                first_guess = np.array([6,2.5,1.5,2.66,2.75,1.42,35,35,20])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
@@ -696,9 +707,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             )
 
             Economics = CMRC_3_Main(Parameters)
-
             evaluation_value = logger.log(params, Economics)
-
             return evaluation_value
 
 
