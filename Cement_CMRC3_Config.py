@@ -60,8 +60,8 @@ logger = OptimisationLogger(
     log_dir=results_dir,
 )
 
-checkpoint_file = "de_checkpoint_desktop_CRMC3_polaris_220426.pkl" # Checkpoint file name
-output_filename = 'CRMC3_desktop_CRMC3_polaris_220426.txt'
+checkpoint_file = "de_checkpoint_desktop_CRMC3_polaris_unconstrained_040526.pkl" # Checkpoint file name
+output_filename = 'CRMC3_desktop_CRMC3_polaris_unconstrained_040526.txt'
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -70,9 +70,9 @@ output_filename = 'CRMC3_desktop_CRMC3_polaris_220426.txt'
 Options = { 
     "Method": "Optimisation",  # Method is either by Brute_Force or Optimisation or Both
     "Permeance_From_Activation_Energy": True, # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
-    "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
-    "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
-    "Purity_Hard_Cap": True,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
+    "Extra_Recovery_Penalty": False,  # If true, adds a penalty to the objective function to encourage higher recoveries
+    "Recovery_Soft_Cap": (False, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
+    "Purity_Hard_Cap": False,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
     "Anti_Aging_LowTemp": False, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
     }  
 
@@ -83,21 +83,21 @@ else: print(f"Running the { Options["Method"]} method for path {filename}")
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [0.5, 10], # Flow/Area ratio
-    "Q_A_ratio_2" : [0.5, 10],  
-    "Q_A_ratio_3" : [0.5, 10], 
+    "Q_A_ratio_1" : [5, 30], # Flow/Area ratio
+    "Q_A_ratio_2" : [1, 10],  
+    "Q_A_ratio_3" : [1, 10], 
 
-    "P_up_1" : [1, 10],  # Feed pressure range  in bar    
-    "P_up_2" : [1, 10],  
-    "P_up_3" : [1, 10], 
+    "P_up_1" : [1, 7],  # Feed pressure range  in bar    
+    "P_up_2" : [1, 7],  
+    "P_up_3" : [1, 7], 
 
     #"P_perm_1" : [0.22, 1], # Permeate pressure range in bar
     #"P_perm_2" : [0.22, 1], 
     #"P_perm_3" : [0.22, 1], 
 
-    "Temperature_1" : [-40, 50],  # Temperature range in Celcius
-    "Temperature_2" : [-40, 50],  
-    "Temperature_3" : [-40, 50], 
+    "Temperature_1" : [0, 60],  # Temperature range in Celcius
+    "Temperature_2" : [0, 60],  
+    "Temperature_3" : [-10, 60], 
 }
 
 
@@ -518,16 +518,11 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         #Obtain water content in the compression train to dehydrate
         H2O_train = []
         for k in range(3):
-            H2O_train.append(Duties.get_cell_value(f'H{k+36}'))
+            H2O_train.append(Duties.get_cell_value(f'H{k+30}'))
 
-        if H2O_train:
-            valid_water = []
-            for water in H2O_train:
-                if water is not None:  # Check if the element is not None
-                    valid_water.append(water)
-            H2O_to_remove = max(min(valid_water), 0) if valid_water else 0
-           
-        else: H2O_to_remove=0
+        chosen_index = Liquefaction[4]  # Index of the dataset selected for the Liquefaction train
+        chosen_water = H2O_train[chosen_index]
+        H2O_to_remove = max(chosen_water, 0) if chosen_water is not None else 0
 
         #Obtain vacuum pump duty and resulting cooling duty from each membrane:
         Vacuum_Duty1 = Vacuum_1.get_cell_value("B10") # kW
@@ -650,7 +645,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([6,2.5,1.5,2.66,2.75,1.42,35,35,20])
+                first_guess = np.array([15,1.8,5,2.66,2.79,1.42,30,40,45])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)
@@ -687,6 +682,13 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
         # Define the objective function to be minimised
         def objective_function(params):
             
+            '''
+            #format and print parameters for debugging            
+            for i, param in enumerate(params):
+                print(f"Parameter {i+1}: {param:.3f}")
+            print()
+            '''
+
             Membrane_1["Q_A_ratio"] = params[0]
             Membrane_2["Q_A_ratio"] = params[1]
             Membrane_3["Q_A_ratio"] = params[2]

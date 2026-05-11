@@ -1,138 +1,236 @@
 import math
+from tkinter import N
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_bvp
+from scipy.optimize import least_squares
 import numpy as np
 import pandas as pd
-from scipy.integrate import solve_ivp
-import warnings
 
-
-def mass_balance_CO_ODE(vars):
+def mass_balance_CC_ODE_BVP(vars):
 
     Membrane, Component_properties, Fibre_Dimensions = vars
-
     Membrane["Total_Flow"] = Membrane["Feed_Flow"] + Membrane["Sweep_Flow"]
-    Fibre_Dimensions["Number_Fibre"] = Membrane["Area"] / (
-        Fibre_Dimensions["Length"] * math.pi * Fibre_Dimensions["D_out"]
-    )
+    Fibre_Dimensions["Number_Fibre"] = Membrane["Area"] / (Fibre_Dimensions["Length"] * math.pi * Fibre_Dimensions["D_out"])
 
     epsilon = 1e-10
-    J = len(Membrane["Feed_Composition"])
+
+    J = len(Membrane["Feed_Composition"])   
+
+    n_elements = 250
+
     L = Fibre_Dimensions["Length"]
 
     Membrane["Feed_Composition"]  = np.array(Membrane["Feed_Composition"])
     Membrane["Sweep_Composition"] = np.array(Membrane["Sweep_Composition"])
 
-    # ------------------------------------------------------------------ #                                
-    #  var[0:J]     = x[i]    retentate mole fractions                   #
-    #  var[J:2J]    = y[i]    permeate  mole fractions                   #
-    #  var[2J]      = Q_ret   total retentate flow (normalised)          #
-    #  var[2J+1]    = Q_perm  total permeate  flow (normalised)          #
-    # ------------------------------------------------------------------ #
-    def membrane_odes(z, var):
 
-        x     = var[:J]
-        y     = var[J:2*J]
-        Q_ret = max(var[2*J],   epsilon)
-        Q_perm= max(var[2*J+1], epsilon)
+    '''----------------------------------------------------------###
+    ###------------- Mixture Viscosity Calculation --------------###
+    ###----------------------------------------------------------'''
+
+    def mixture_visc(composition):
+        y = composition
+        visc = np.zeros(J)
+        params = np.array(Component_properties["Viscosity_param"])
+        visc = 1e-6 * (params[:, 0] * Membrane["Temperature"] + params[:, 1]) 
+        Mw = Component_properties["Molar_mass"]
+        phi = np.zeros((J, J))
+        for i in range(J):
+            for j in range(J):
+                if i != j:
+                    phi[i][j] = ( ( 1 + ( visc[i]/visc[j] )**0.5 * ( Mw[j]/Mw[i] )**0.25 ) **2 ) / ( ( 8 * ( 1 + Mw[i]/Mw[j] ) )**0.5 )
+                else:
+                    phi[i][j] = 1
+        nu = np.zeros(J)
+        for i in range(J):
+            nu[i] = y[i] * visc[i] / sum(y[j] * phi[i][j] for j in range(J))
+        return sum(nu)
+
+
+    '''----------------------------------------------------------###
+    ###--------------- Pressure Drop Calculation ----------------###
+    ###----------------------------------------------------------'''
+
+    def pressure_drop(composition, Q, P):
+        visc_mix = mixture_visc(composition)
+        D_in = Fibre_Dimensions["D_in"]
+        Q = Q / Fibre_Dimensions['Number_Fibre']
+        R = 8.314
+        nu = (Q * R * Membrane["Temperature"]) / P
+        dP_dz = (128 * visc_mix) / (math.pi * D_in**4 * P) * nu
+        return dP_dz
+    
+  
+    '''---------------------------------------------------------------###
+    ###---------- Non discretised solution for initial guess ----------###
+    ###---------------------------------------------------------------'''
+
+    def approx_mass_balance(vars):
+
+        J = len(Membrane["Feed_Composition"])
+
+        x_N = Membrane["Feed_Composition"]
+        y_0 = Membrane["Sweep_Composition"]
+        cut_r_N = Membrane["Feed_Flow"]/Membrane["Total_Flow"]
+        cut_p_0 = Membrane["Sweep_Flow"]/Membrane["Total_Flow"]
+    
+        Qr_N = Membrane["Feed_Flow"] 
+        Qp_0 = Membrane["Sweep_Flow"]
+
+        x_0 = vars [0:J]
+        y_N = vars [J:2*J]
+        cut_r_0 = vars[-2]
+        cut_p_N= vars[-1]
+
+        Qr_0 = Membrane["Total_Flow"] * cut_r_0
+        Qp_N = Membrane["Total_Flow"] * cut_p_N
+
+        eqs = [0]*(2*J+2)
+
+        eqs[0] = sum(x_0) - 1
+        eqs[1] = sum(y_N) - 1
+
+        for i in range(J):
+            eqs[i+2] = ( x_N[i] * cut_r_N - x_0[i] * cut_r_0 + y_0[i] * cut_p_0 - y_N[i] * cut_p_N )
+
+        for i in range (J): 
+            pp_diff_in = Membrane["Pressure_Feed"] * x_N[i] - Membrane["Pressure_Permeate"] * y_0[i]
+            pp_diff_out = Membrane["Pressure_Feed"] * x_0[i] - Membrane["Pressure_Permeate"] * y_N[i]
+
+            if (pp_diff_in / (pp_diff_out + epsilon) + epsilon) >= 0:
+                ln_term = math.log((pp_diff_in) / (pp_diff_out + epsilon) + epsilon)
+            else:
+                ln_term = epsilon 
+
+            dP = (pp_diff_in - pp_diff_out) / ln_term
+
+            eqs[i+2+J] = 1 - ( Membrane["Area"] * dP * Membrane["Permeance"][i] ) / ( y_N[i] * Qp_N - y_0[i] * Qp_0 +epsilon)
+
+        return eqs
+
+    def approx_shooting_guess():
+
+        J = len(Membrane["Feed_Composition"])
+        approx_guess = [1/J]*J * 2 + [0.5] * 2
+
+        approx_sol = least_squares(
+            approx_mass_balance,
+            approx_guess,
+            bounds=(0,1),
+            xtol=1e-6,
+            ftol=1e-6   
+            )
+
+        return approx_sol
+    
+
+    '''----------------------------------------------------------###
+    ###--------------------- BVP Solver ------------------------###
+    ###----------------------------------------------------------'''
+
+    def membrane_odes(z, var):
+        u_x = np.maximum(var[:J], 1e-10)
+        u_y = np.minimum(var[J:2*J], -1e-10) 
+        P_perm = var[2*J] if var.shape[0] > 2*J else Membrane["Pressure_Permeate"]
 
         P_perm = Membrane["Pressure_Permeate"]
         Pf     = Membrane["Pressure_Feed"]
-        A      = Fibre_Dimensions["D_out"] * math.pi * Fibre_Dimensions["Number_Fibre"] #total membrane area
+        A      = Fibre_Dimensions["D_out"] * math.pi * Fibre_Dimensions["Number_Fibre"]
         Ttot   = Membrane["Total_Flow"]
-
+    
         permeance = np.array(Membrane["Permeance"])
 
-        # component permeation flux (normalised)
-        J_perm = (permeance * A / Ttot) * (Pf * x - P_perm * y)  # shape (J,)
+        sum_ux = np.sum(u_x, axis=0)
+        sum_uy = np.sum(u_y, axis=0)
 
-        # total flow derivatives
-        dQ_ret_dz  = -np.sum(J_perm)
-        dQ_perm_dz =  np.sum(J_perm)
+        # safe mole fractions
+        x = np.zeros_like(u_x)
+        y = np.zeros_like(u_y)
+    
+        safe_x = np.abs(sum_ux) > 1e-6
+        safe_y = np.abs(sum_uy) > 1e-6
+    
+        x[:, safe_x] = u_x[:, safe_x] / sum_ux[safe_x]
+        y[:, safe_y] = u_y[:, safe_y] / sum_uy[safe_y]
 
-        # mole fraction derivatives
-        # d(x[i])/dz = (-J_perm[i] - x[i]*dQ_ret_dz) / Q_ret
-        dx_dz = (-J_perm - x * dQ_ret_dz) / Q_ret
+        du_x_dz = -(permeance[:, None] * A / Ttot) * (Pf * x - P_perm * y)
+        du_y_dz = -du_x_dz
 
-        # d(y[i])/dz = ( J_perm[i] - y[i]*dQ_perm_dz) / Q_perm
-        dy_dz = ( J_perm - y * dQ_perm_dz) / Q_perm
+        return np.concatenate([du_x_dz, du_y_dz], axis=0)
+    
+    def bc(ya, yb):
+        feed_norm  =  Membrane["Feed_Composition"]  * Membrane["Feed_Flow"]  / Membrane["Total_Flow"]
+        sweep_norm = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
+        return np.concatenate([ya[:J] - feed_norm, yb[J:2*J] - sweep_norm])
 
-        return np.concatenate([dx_dz, dy_dz, [dQ_ret_dz, dQ_perm_dz]])
+    sol = approx_shooting_guess() #conducts a simplified mass balance to get an initial guess
+    x_L_approx = sol.x[:J]
+    y_0_approx = sol.x[J:2*J]
+    cut_r_L    = sol.x[-2]
+    cut_p_0    = sol.x[-1]
+    U_x_z0_approx = x_L_approx * cut_r_L #approx 
+    U_y_zL_approx  = -y_0_approx * cut_p_0
 
-    # ------------------------------------------------------------------ #
-    #  Initial conditions at z=0                                          #
-    # ------------------------------------------------------------------ #
-    Q_feed  = Membrane["Feed_Flow"]  / Membrane["Total_Flow"]
-    Q_sweep = Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
+    U_x_feed_norm  =  Membrane["Feed_Composition"]  * Membrane["Feed_Flow"]  / Membrane["Total_Flow"]
+    U_y_sweep_norm = -Membrane["Sweep_Composition"] * Membrane["Sweep_Flow"] / Membrane["Total_Flow"]
 
-    x0 = Membrane["Feed_Composition"].copy()
-    y0 = Membrane["Sweep_Composition"].copy()
+    x_init = np.linspace(0, Fibre_Dimensions["Length"], 10)
 
-    # guard against zero sweep
-    if Q_sweep < epsilon:
-        y0 = x0.copy()   # dummy composition, will not affect results
-        Q_sweep = epsilon
+    U_x_init = np.zeros((J, 10))
+    U_y_init = np.zeros((J, 10))
+    for i in range(J):
+        U_x_init[i, :] = np.linspace(U_x_feed_norm[i], U_x_z0_approx[i], 10)
+        U_y_init[i, :] = np.linspace(U_y_zL_approx[i], U_y_sweep_norm[i], 10)
+    y_init = np.vstack([U_x_init, U_y_init])
 
-    boundary = np.concatenate([x0, y0, [Q_feed, Q_sweep]])
+    ### BVP SOLVER ###
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=RuntimeWarning, 
+                              module='scipy.integrate._bvp')
+        bvp_sol = solve_bvp(membrane_odes, bc, x_init, y_init, tol=1e-4, max_nodes=1000)
 
-    # ------------------------------------------------------------------ #
-    #  Solve                                                               #
-    # ------------------------------------------------------------------ #
-    t_span = [0, L]
-    t_eval = np.linspace(0, L, 500)
+    y_sol = bvp_sol.y                          # shape (2J, n_points) on adaptive mesh
+    z_adaptive = bvp_sol.x                     # adaptive mesh chosen by solver
 
-    def retentate_exhausted(z, var): # event to stop integration if retentate flow goes to zero (full permeation)
-        return var[2*J] - 1e-4  # Q_ret normalised
+    U_x_profile = y_sol[:J, :]  * Membrane["Total_Flow"]
+    U_y_profile = y_sol[J:2*J, :] * Membrane["Total_Flow"]
 
-    retentate_exhausted.terminal = True
-    retentate_exhausted.direction = -1
+    if Membrane["Sweep_Flow"] == 0:
+        threshold = 1e-4
+    else:
+        threshold = 1e-8
 
-    solution = solve_ivp(
-        membrane_odes, t_span, y0=boundary,
-        method='BDF', t_eval=t_eval,
-        rtol=1e-6, atol=1e-8,
-        events=retentate_exhausted
-    )
+    x_profiles = np.zeros_like(U_x_profile)
+    y_profiles = np.zeros_like(U_y_profile)
 
-    #if not solution.success:
-    #    print(f"Warning: {solution.message}")
+    sum_ux_prof = np.sum(U_x_profile, axis=0)
+    sum_uy_prof = np.sum(U_y_profile, axis=0)
 
-    # ------------------------------------------------------------------ #
-    #  Extract profiles                                                    #
-    # ------------------------------------------------------------------ #
-    z_points      = solution.t
-    z_norm        = z_points / L
+    safe_x = np.abs(sum_ux_prof) > threshold
+    safe_y = np.abs(sum_uy_prof) > threshold
 
-    x_profiles    = solution.y[:J,    :]   # mole fractions, shape (J, n_pts)
-    y_profiles    = solution.y[J:2*J, :]
-    Qr_profile    = solution.y[2*J,   :] * Membrane["Total_Flow"]   # unnormalise
-    Qp_profile    = solution.y[2*J+1, :] * Membrane["Total_Flow"]
+    x_profiles[:, safe_x] = U_x_profile[:, safe_x] / sum_ux_prof[safe_x]
+    y_profiles[:, safe_y] = U_y_profile[:, safe_y] / sum_uy_prof[safe_y]
 
-    # clip compositions to [0, 1] — small numerical violations possible
-    x_profiles = np.clip(x_profiles, 0, 1)
-    y_profiles = np.clip(y_profiles, 0, 1)
+    Qr_profile =  np.sum(U_x_profile, axis=0)
+    Qp_profile = -np.sum(U_y_profile, axis=0)
 
-    # renormalise rows to sum to 1
-    x_profiles = x_profiles / (np.sum(x_profiles, axis=0) + epsilon)
-    y_profiles = y_profiles / (np.sum(y_profiles, axis=0) + epsilon)
-
-    # ------------------------------------------------------------------ #
-    #  Build profile DataFrame                                             #
-    # ------------------------------------------------------------------ #
+    z_norm = z_adaptive / Fibre_Dimensions["Length"]
     data = {
-        "norm_z": z_norm,
+        "norm_z":   z_norm,
         **{f"x{i+1}": x_profiles[i, :] for i in range(J)},
         **{f"y{i+1}": y_profiles[i, :] for i in range(J)},
         "Qr": Qr_profile,
         "Qp": Qp_profile,
     }
+   
     profile = pd.DataFrame(data)
 
-    # ------------------------------------------------------------------ #
-    #  Outlet values                                                       #
-    # ------------------------------------------------------------------ #
     x_ret  = profile.iloc[-1][[f"x{i+1}" for i in range(J)]].values
-    y_perm = profile.iloc[-1][[f"y{i+1}" for i in range(J)]].values
+    y_perm = profile.iloc[0][[f"y{i+1}" for i in range(J)]].values
     Qr     = profile.iloc[-1]["Qr"]
-    Qp     = profile.iloc[-1]["Qp"]
+    Qp     = profile.iloc[0]["Qp"]
 
-    CO_ODE_results = x_ret, y_perm, Qr, Qp
-    return CO_ODE_results, profile
+    CC_ODE_results = x_ret, y_perm, Qr, Qp
+    return CC_ODE_results, profile

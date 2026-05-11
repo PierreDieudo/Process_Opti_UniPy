@@ -35,32 +35,22 @@ Most debugging and test messages are removed from this solution ; manual checks 
 
 Filename_input = input("Enter the version of the file: Original, Copy, Copy2, or Copy3: ")
 if Filename_input.lower() == "original":
-    filename = 'Cement_Ferrari2021_nov25.usc' #Unisim file name
+    filename = 'DM_dehydration_May26.usc' #Unisim file name
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\' #Directory of the unisim file
     results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\' #Directory to save results files
     checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' #Directory to save checkpoint files
 elif Filename_input.lower() == "copy":
-    filename = 'Cement_Ferrari2021_nov25_Copy.usc'
+    filename = 'DM_dehydration_May26_Copy.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
     results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
     checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files\\'
 elif Filename_input.lower() == "copy2":
-    filename = 'Cement_Ferrari2021_nov25_Copy2.usc'
+    filename = 'DM_dehydration_May26_Copy2.usc'
     directory = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
     results_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
     checkpoint_dir = 'C:\\Users\\Simulation Machine\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files\\'
 elif Filename_input.lower() == "copy3":
-    filename = 'Cement_Ferrari2021_nov25_Copy3.usc'
-    directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
-    checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
-elif Filename_input.lower() == "copy4":
-    filename = 'Cement_Ferrari2021_nov25_Copy4.usc'
-    directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
-    results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
-    checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
-elif Filename_input.lower() == "copy5":
-    filename = 'Cement_Ferrari2021_nov25_Copy5.usc'
+    filename = 'DM_dehydration_May26_Copy3.usc'
     directory = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Cement_Plant_2021\\'
     results_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Opti_results_Graveyard\\'
     checkpoint_dir = 'C:\\Users\\s1854031\\OneDrive - University of Edinburgh\\Python\\Checkpoint_Files' 
@@ -73,8 +63,8 @@ logger = OptimisationLogger(
 )
 
 
-checkpoint_file = "de_checkpoint_DM_polaris_210426.pkl" # Checkpoint file name
-output_filename = 'DM_Polaris_210426.txt' # Output file name
+checkpoint_file = "de_checkpoint_DMC_dehydration_110526.pkl" # Checkpoint file name
+output_filename = 'DMC_dehydration_110526.txt' # Output file name
 
 #-------------------------------#
 #--- Optimisation Parameters ---#
@@ -83,9 +73,9 @@ output_filename = 'DM_Polaris_210426.txt' # Output file name
 Options = { 
     "Method": "Optimisation",  # Method is either by Brute_Force or Optimisation or Both
     "Permeance_From_Activation_Energy": True, # True will use the activation energies from the component_properties dictionary - False will use the permeances defined in the membranes dictionaries.
-    "Extra_Recovery_Penalty": True,  # If true, adds a penalty to the objective function to encourage higher recoveries
-    "Recovery_Soft_Cap": (True, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
-    "Purity_Hard_Cap": True,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
+    "Extra_Recovery_Penalty": False,  # If true, adds a penalty to the objective function to encourage higher recoveries
+    "Recovery_Soft_Cap": (False, 0.9),  # (Activate limit, value) - If true, sets a soft limit on recovery: recovery above the soft cap will not decrease the primary emission cost further 
+    "Purity_Hard_Cap": False,  # (Activate limit) - If true, sets a hard limit on purity: purity below the hard cap will return a very high cost. Cap is taken from Process_param dictionary
     "Anti_Aging_LowTemp": False, # If true, assumes than aging is negligible at -20 C and under - membranes under that temperature use fresh separation properties
     }    
 print(Options) 
@@ -94,14 +84,14 @@ else: print(f"Running the { Options["Method"]} method for path {filename}")
 
 # Set bounds of optimisation parameters - comment unused parameters
 Opti_Param = {
-    "Q_A_ratio_1" : [5, 250], # Flow/Area ratio for the second stage
-    "Q_A_ratio_2" : [5, 25], # Flow/Area ratio for the first stage
-    "P_up_1" : [1.1, 10],  # Upper pressure range for the second stage in bar
-    "P_up_2" : [1.1, 10],  # Upper pressure range for the first stage in bar
+    "Q_A_ratio_1" : [0.5, 5], # Flow/Area ratio for the second stage
+    "Q_A_ratio_2" : [1, 10], # Flow/Area ratio for the first stage
+    "P_up_1" : [1.1, 5],  # Upper pressure range for the second stage in bar
+    "P_up_2" : [1.1, 5],  # Upper pressure range for the first stage in bar
     #"P_perm_1" : [0.22,1],  # Permeate pressure for the first stage in bar 
     #"P_perm_2" : [0.22,1],  # Permeate pressure for the second stage in bar 
-    "Temperature_1" : [-60, 50],  # Temperature range in Celcius
-    "Temperature_2" : [-60, 50],  # Temperature range in Celcius
+    "Temperature_1" : [-40, 40],  # Temperature range in Celcius
+    "Temperature_2" : [-60, 40],  # Temperature range in Celcius
     }
 
 #--------------------------#
@@ -117,7 +107,7 @@ Membrane_1 = {
     "Q_A_ratio": 1.92,                      # ratio of the membrane feed flowrate to its area (in m3(stp)/m2.hr)
     "Permeance": [600, 600/150, 600/60, 600], # in GPU [CO2, N2, O2, H2O]
     "Pressure_Drop": False,
-    "Material": "Polaris", # Material used - important if getting permeance from activation energies
+    "Material": "PIM-1", # Material used - important if getting permeance from activation energies
     }
 
 Membrane_2 = {
@@ -129,7 +119,7 @@ Membrane_2 = {
     "Q_A_ratio": 8,                          
     "Q_A_ratio": 1.92,                      
     "Permeance": [600, 600/150, 600/60, 600],
-    "Pressure_Drop": False,
+    "Pressure_Drop": Membrane_1["Pressure_Drop"],
     "Material": Membrane_1["Material"],
     }
 
@@ -229,23 +219,25 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         def Mem_Train_Choice(Membrane):
         
-            unisim.wait_solution(timeout=10, check_pop_ups=2, check_consistency_error=3)
+            unisim.wait_solution()
 
             Train_data = []
             for i in range(3):  
                 if Membrane == Membrane_1:
                     Train_data.append([  
-                        Duties.get_cell_value(f'H{i+9}'),  # Compressor Duty (kW)
-                        Duties.get_cell_value(f'I{i+9}'),  # Hex Area (m2)
-                        Duties.get_cell_value(f'J{i+9}'),  # Water Flowrate (kg/hr)
-                        Duties.get_cell_value(f'K{i+9}') / 1e6 if Duties.get_cell_value(f'K{i+9}') is not None and Duties.get_cell_value(f'K{i+9}') > 0 else 0  # Cryogenic Cooler Duty (MJ/hr)
+                        Duties.get_cell_value(f'I{i+9}'),  # Compressor Duty (kW)
+                        Duties.get_cell_value(f'J{i+9}'),  # Hex Area (m2)
+                        Duties.get_cell_value(f'K{i+9}'),  # Water Flowrate (kg/hr)
+                        Duties.get_cell_value(f'L{i+9}')/1e6,   # Cryogenic Cooler Duty (GJ/hr)
+                        Duties.get_cell_value(f'M{i+9}')  # Expander duty for dehydration (kW) - only if applicable
                     ])
                 elif Membrane == Membrane_2:
                     Train_data.append([  
-                        Duties.get_cell_value(f'H{i+15}'),  # Compressor Duty (kW)
-                        Duties.get_cell_value(f'I{i+15}'),  # Hex Area (m2)
-                        Duties.get_cell_value(f'J{i+15}'),   # Water Flowrate (kg/hr)
-                        Duties.get_cell_value(f'K{i+15}') / 1e6 if Duties.get_cell_value(f'K{i+15}') is not None and Duties.get_cell_value(f'K{i+15}') > 0 else 0  # Cryogenic Cooler Duty (MJ/hr)
+                        Duties.get_cell_value(f'I{i+15}'),  # Compressor Duty (kW)
+                        Duties.get_cell_value(f'J{i+15}'),  # Hex Area (m2)
+                        Duties.get_cell_value(f'K{i+15}'),   # Water Flowrate (kg/hr)
+                        Duties.get_cell_value(f'L{i+15}')/1e6,   # Cryogenic Cooler Duty (GJ/hr)
+                        Duties.get_cell_value(f'M{i+15}')   # Expander duty for dehydration (kW) - only if applicable
                     ])
 
                 else: raise ValueError ("Incorrect membrane denomination")
@@ -253,23 +245,44 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             # Filter out trains with None or non-positive compressor duty
             valid_train_indices = [i for i, train in enumerate(Train_data) if train[0] is not None and train[0] > 0 and train[1] is not None and train[1] >0]
             if not valid_train_indices:
-                raise ConvergenceError("No valid trains found with positive compressor duty.")
+                raise ValueError("No valid trains found with positive compressor duty.")
         
             # Find the index of the train with the lowest compressor duty in Train_data
             lowest_duty_train_index = min(valid_train_indices, key=lambda i: Train_data[i][0])
             lowest_duty_train = Train_data[lowest_duty_train_index]
 
-            # Read the spreadsheet of the corresponding train  
-            if Membrane == Membrane_1:
-                Mem_train = unisim.get_spreadsheet(f'Train 10{lowest_duty_train_index + 1}')  
-                Membrane_1['Feed_Flow'] = Mem_train.get_cell_value('C3') / 3.6 # feed flow rate from UNISIM in mol/s (from kmol/h)
-                Membrane_1["Feed_Composition"] = [Mem_train.get_cell_value(f'C{i+4}') for i in range(J)] #feed mole fractions from UNISIM
-                Membrane_1["Train_Data"] = lowest_duty_train # Store the train data in the membrane dictionary
-            elif Membrane == Membrane_2:
-                Mem_train = unisim.get_spreadsheet(f'Train 20{lowest_duty_train_index + 1}')
-                Membrane_2['Feed_Flow'] = Mem_train.get_cell_value('C3') / 3.6 # feed flow rate from UNISIM in mol/s (from kmol/h)
-                Membrane_2["Feed_Composition"] = [Mem_train.get_cell_value(f'C{i+4}') for i in range(J)] #feed mole fractions from UNISIM
-                Membrane_2["Train_Data"] = lowest_duty_train # Store the train data in the membrane dictionary
+            membrane_number = Membrane["Name"].split("_")[1]
+            Mem_train = unisim.get_spreadsheet(f'Train {membrane_number}0{lowest_duty_train_index + 1}')
+
+            # Obtain flow and composition before potential cryogenic cooling
+            Hydrated_Flow = Mem_train.get_cell_value('D27') # in kmol/hr
+            Hydrated_Comp = [Mem_train.get_cell_value(f'D{i+28}') for i in range(J)]
+
+            if Membrane["Temperature"] < 273.15 and Hydrated_Comp[-1] > 1e-8: # If temperature is below 0 C and water content is above 1e-4, assume cryogenic cooling and dehydration using PSA
+                #Remove water using PSA: assume water content becomes negligible.
+                Post_PSA_Flow = Hydrated_Flow * (1 - Hydrated_Comp[-1]) # in kmol/hr
+                Post_PSA_Comp = [Hydrated_Comp[i] * Hydrated_Flow / Post_PSA_Flow for i in range(J-1)] + [0] # in mole fraction
+                Membrane["Pre_Dehydration_Flow"] = Hydrated_Flow # Flowrate of stream to be dehydrated in kmol/hr
+            else:
+                Post_PSA_Flow = Hydrated_Flow
+                Post_PSA_Comp = Hydrated_Comp
+                Membrane["Pre_Dehydration_Flow"] = 0
+
+            # Send dehydrated stream back to UNISIM
+            Mem_train.set_cell_value('I27', Post_PSA_Flow)
+            unisim.wait_solution(timeout=10, check_pop_ups=2, check_consistency_error=3)
+            for i in range(J):
+                Mem_train.set_cell_value(f'I{i+28}', Post_PSA_Comp[i])
+            unisim.wait_solution(timeout=10, check_pop_ups=2, check_consistency_error=3)
+
+            #print(f'Cryogenic Duty of {Membrane["Name"]}: {lowest_duty_train[3]:.2f} GJ/hr, Dehydration: {Membrane["Pre_Dehydration_Flow"]:.2f} kmol/hr')
+        
+            # Obtain final feed conditions after potential cryogenic cooling
+            Membrane['Feed_Flow']        = Mem_train.get_cell_value('C3') / 3.6 # feed flow in mol/s
+            Membrane['Feed_Composition'] = [Mem_train.get_cell_value(f'C{i+4}') for i in range(J)]
+            Membrane['Train_Data']       = lowest_duty_train
+            Membrane['Cryogenic_Duty']     = lowest_duty_train[3] # if cryogenic cooling is needed, this is the duty of the cooler. If not, this value should be 0
+            Membrane['Expander_Dehy_Duty']      = lowest_duty_train[4] # kW ; optional - only if expander is used for heat recovery after dehydration
 
         #------------------------------------------#
         #--------- Function to run module ---------#
@@ -393,7 +406,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 # Filter out trains with None or non-positive compressor duty
                 valid_trains = [i for i, train in enumerate(train_data) if train[0] is not None and train[0] > 0 and train[1] is not None and train[1] >0]
                 if not valid_trains:
-                    raise ConvergenceError
+                    raise ValueError("No valid trains found with positive compressor duty.")
             
                 # Find the train with the lowest compressor duty
                 lowest_duty_train_index = min(valid_trains, key=lambda i: train_data[i][0])
@@ -402,48 +415,37 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 return lowest_duty_train
 
             def gather_train_data(start_row):
-                data = []
-                for i in range(3):
-                    k_val = Duties.get_cell_value(f'K{i + start_row}')
+                return [
+                    [
+                        Duties.get_cell_value(f'I{i+start_row}'),  # Compressor Duty (kW)
+                        Duties.get_cell_value(f'J{i+start_row}'),  # Hex Area (m2)
+                        Duties.get_cell_value(f'K{i+start_row}'),  # Water Flowrate (kg/hr)
+                        Duties.get_cell_value(f'L{i+start_row}') / 1e6 #from kJ/hr to GJ/hr
+                        if Duties.get_cell_value(f'L{i+start_row}') is not None and Duties.get_cell_value(f'K{i+start_row}') > 0 
+                        else 0  # Cryogenic Cooler Duty (MJ/hr)
+                    ]
+                    for i in range(3)
+                ]
 
-                    cryo = 0
-                    if k_val is not None:
-                        try:
-                            cryo = (k_val / 1e6) if k_val > 0 else 0
-                        except TypeError:
-                            v = float(k_val)  # if needed
-                            cryo = (v / 1e6) if v > 0 else 0
+                Train1 = gather_train_data(9)
+                Train2 = gather_train_data(15)
+                Liquefaction = gather_train_data(3)
 
-                    data.append([
-                        Duties.get_cell_value(f'H{i + start_row}'),
-                        Duties.get_cell_value(f'I{i + start_row}'),
-                        Duties.get_cell_value(f'J{i + start_row}'),
-                        cryo
-                    ])
-                return data
+                # Get the train with the lowest compressor duty for each category
+                Train1_lowest = get_lowest_duty_train(Train1)
+                Train2_lowest = get_lowest_duty_train(Train2)
+                Liquefaction_lowest = get_lowest_duty_train(Liquefaction)
 
+                return Train1_lowest, Train2_lowest, Liquefaction_lowest
 
-            Train1 = gather_train_data(9)
-            Train2 = gather_train_data(15)
-            Liquefaction = gather_train_data(3)
-
-            # Get the train with the lowest compressor duty for each category
-            Train1_lowest = get_lowest_duty_train(Train1)
-            Train2_lowest = get_lowest_duty_train(Train2)
-            Liquefaction_lowest = get_lowest_duty_train(Liquefaction)
-
-            return Train1_lowest, Train2_lowest, Liquefaction_lowest
         try: 
             Train1, Train2, Liquefaction = Duty_Gather() # Gather the duties from the solved process
         except ConvergenceError:
             return 5e8
 
         # Gather the energy recovery form the retentate. Assume flue gas at 1 bar and a maximum temperature of 120 C to match original flue gas.
-        Expanders = (Duties.get_cell_value('H21'), Duties.get_cell_value('H24'), Duties.get_cell_value('H27')) # Get the retentate expanders duties (kW)
-        Heaters = (Duties.get_cell_value('I21'), Duties.get_cell_value('I24')) # Get the retentate heaters duties (kJ/hr)
-
-        # Gather the cryogenic cooler duties - if any
-        Cryogenics = ( (Train1[3], Membrane_1["Temperature"]) , (Train2[3], Membrane_2["Temperature"]) ) # Get the cryogenic cooler duties (MJ/hr) for each membrane train
+        Expanders = [Duties.get_cell_value('I21'), Duties.get_cell_value('I24'), Duties.get_cell_value('I27')] # Get the retentate expanders duties (kW)
+        Heaters = [Duties.get_cell_value('J21'), Duties.get_cell_value('J24')] # Get the retentate heaters duties (kJ/hr)
 
         # Add information to the compression trains about their number of compressors and coolers
         Train1.append(Train1[4]+1) # Append the number of compressors in the train
@@ -457,27 +459,42 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
 
         Liquefaction.append(Liquefaction[4]+3)  # Append the number of compressors and heat exchangers in the liquefaction train
         Liquefaction.append(Liquefaction[4]+3)
-         
-        
-        #Obtain water content in the compression train to dehydrate
+
+        #Obtain water content in the liquefaction train to dehydrate using TEG
         H2O_train = []
         for k in range(3):
-            H2O_train.append(Duties.get_cell_value(f'H{k+30}'))
+            H2O_train.append(Duties.get_cell_value(f'I{k+30}'))
+        chosen_index = Liquefaction[4]  # Index of the dataset selected for the Liquefaction train
+        chosen_water = H2O_train[chosen_index]
+        H2O_to_TEG = max(chosen_water, 0) if chosen_water is not None else 0
+        #print(f"Water to remove in the final dehydration step (kg/hr): {H2O_to_TEG:.2f}")
 
-        if H2O_train:
-            valid_water = []
-            for water in H2O_train:
-                if water is not None:  # Check if the element is not None
-                    valid_water.append(water)
-            H2O_to_remove = max(min(valid_water), 0) if valid_water else 0
-           
-        else: H2O_to_remove=0
-    
+        # Add the dehydration that may be done in the membranes pre-conditioning using Molecular Sieve (TSA) (if cryogenic cooling is needed)
+        # Also take into account the use for turbo expander and for cryogenic cooling duty
+        H2O_to_PSA = 0
+        if Membrane_1["Pre_Dehydration_Flow"] > 0: 
+            H2O_to_PSA += Membrane_1["Pre_Dehydration_Flow"]
+            Expanders.append(Membrane_1["Expander_Dehy_Duty"]) if Membrane_1["Expander_Dehy_Duty"] is not None else 0 # Add the expander duty for dehydration if applicable
+        if Membrane_2["Pre_Dehydration_Flow"] > 0:
+            H2O_to_PSA += Membrane_2["Pre_Dehydration_Flow"]
+            Expanders.append(Membrane_2["Expander_Dehy_Duty"]) if Membrane_2["Expander_Dehy_Duty"] is not None else 0 # Add the expander duty for dehydration if applicable
+
+        # Gather the cryogenic cooler duties - if any. Check if positive and add to heater duty if negative because of expander overcooling. Also add the expander duty to the expanders list for the costing.
+        Cryogenics = []
+        if Membrane_1["Cryogenic_Duty"] is not None and Membrane_1["Cryogenic_Duty"] > 0:
+            Cryogenics.append((Membrane_1["Cryogenic_Duty"], Membrane_1["Temperature"])) # Append the cryogenic cooling duty in GJ/hr and the temperature in K
+        elif Membrane_1["Cryogenic_Duty"] is not None and Membrane_1["Cryogenic_Duty"] < 0:
+            Heaters.append(-Membrane_1["Cryogenic_Duty"]*1e6) # Add the overcooling duty as a heating duty in kJ/hr (convert from GJ/hr)
+        if Membrane_2["Cryogenic_Duty"] is not None and Membrane_2["Cryogenic_Duty"] > 0:
+            Cryogenics.append((Membrane_2["Cryogenic_Duty"], Membrane_2["Temperature"])) # Append the cryogenic cooling duty in GJ/hr and the temperature in K
+        elif Membrane_2["Cryogenic_Duty"] is not None and Membrane_2["Cryogenic_Duty"] < 0:
+            Heaters.append(-Membrane_2["Cryogenic_Duty"]*1e6) # Add the overcooling duty as a heating duty in kJ/hr (convert from GJ/hr)
+
         #Obtain vacuum pump duty and resulting cooling duty from each membrane:
         Vacuum_1 = unisim.get_spreadsheet("Vacuum_1")
         Vacuum_Duty1 = Vacuum_1.get_cell_value("B10") # kW
         Vacuum_Cooling1 = [Vacuum_1.get_cell_value("G10"),Vacuum_1.get_cell_value("H10")]  # Area, WaterFlow
- 
+    
         Vacuum_2 = unisim.get_spreadsheet("Vacuum_2")
         Vacuum_Duty2 = Vacuum_2.get_cell_value("B10") 
         Vacuum_Cooling2 = [Vacuum_2.get_cell_value("G10"),Vacuum_2.get_cell_value("H10")] 
@@ -493,11 +510,11 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             "Expanders": Expanders,  # Expander data
             "Heaters": Heaters,  # Heater data
             "Cryogenics": Cryogenics,
-            "Dehydration":(H2O_to_remove),
+            "Dehydration":(H2O_to_PSA, H2O_to_TEG), # PSA is the total flowrate pre membrane dehydration (kmol/hr), TEG is the water flowrate (kg/hr) to be removed in the final dehydration step before liquefaction
             "Vacuum_Pump":(Vacuum_Duty1, Vacuum_Duty2),
             "Vacuum_Cooling": (Vacuum_Cooling1, Vacuum_Cooling2)
         }
-        
+
         def replace_none_with_zero(obj):
             if obj is None:
                 return 0
@@ -509,9 +526,9 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
                 return tuple(replace_none_with_zero(v) for v in obj)
             if isinstance(obj, set):
                 return {replace_none_with_zero(v) for v in obj}
-            return obj       
 
-        Process_specs = replace_none_with_zero(Process_specs)    
+            return obj
+        Process_specs = replace_none_with_zero(Process_specs)
 
         from Costing import Costing
         Economics = Costing(Process_specs, Process_param, Component_properties, Options)
@@ -572,7 +589,7 @@ with UNISIMConnector(unisim_path, close_on_completion=False) as unisim:
             if use_initial_guess:
 
                 # Use custom guess
-                first_guess = np.array([52.72050, 99.74713, 2.72050, 1.10475, -34.43264, -55.79533])
+                first_guess = np.array([2,5,3.11,1.34,40,40])
                 print(f"Starting with guess: {first_guess}")
 
                 widths = np.array([b[1] - b[0] for b in bounds], float)

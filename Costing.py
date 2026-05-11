@@ -72,7 +72,9 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     Project_Contingency = 0.15 # CEMCAP
     Indirect_Emission_rate = 262*1e-6 # Electricity generation specific emissions (EU 2014) - in tnCO2/kWh
     Electrivity_Generation_Efficiency = 0.459 # Energy Generation Efficiency of the European grid used in CEMCAP - used to determine SPECCA
-    Dehydration_Cost = 4779 #$2018 per tn of H2O removed at 0 bar in compression train - doi: 10.1016/j.cherd.2018.07.004
+    TEG_Dehydration_Cost = 4779 #$2018 per tn of H2O removed at 30 bar in compression train - doi: 10.1016/j.cherd.2018.07.004
+    TEG_IF = 1.0
+    PSA_Dehydration_IF = 1.1
 
     
     '''
@@ -130,10 +132,28 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
         C_expander += cost_sinnott(Compressor_param, Expander_duty)
     C_expander *= Compressor_IF 
 
+    #Capex from Dehydration using TEG
+    TAC_TEG = TEG_Dehydration_Cost * Process_specs["Dehydration"][1]/1000 * Process_param["Operating_hours"] #in $2018 per year, from a water flow in kg/hr
+    TEG_CE = TAC_TEG * 100/20 * Process_param["Lifetime"] # 2018$ equipment cost represents 20% of opex - from doi: 10.1016/j.cherd.2018.07.004
+    C_TEG = TEG_CE * TEG_IF * Index_2014/Index_2018 * 0.7541 # Convert to 2014 euro money and include installation factor
+
+    #Capex from Dehydration using PSA
+    CE_PSA_2018 = 1e6 * 0.25 * (Process_specs["Dehydration"][0])**0.6 # Equipment cost of PSA dheydration package in $2018 from https://doi.org/10.1016/j.fuproc.2026.108449
+    C_PSA = CE_PSA_2018 * PSA_Dehydration_IF
+    C_PSA *= Index_2014/Index_2018 * 0.7541 # Convert to 2014 euro money and include installation factor
+    TAC_PSA = C_PSA * ( 1 + Process_param["Contingency"]) * ( 1 + Indirect_Cost + Owner_Cost + Project_Contingency) / Process_param["Lifetime"] # Convert to total annualised cost of PSA dehydration package (not including pre compression)
+
+    print(f'Stream amount to dehydrated using PSA: {Process_specs["Dehydration"][0]:.2f} kmol/hr')
+    print(f'Capital cost of PSA dehydration package: {C_PSA/1e6:.2f} million euros')
+    print(f'contribution of PSA dehydration to TPC: {C_PSA* ( 1 + Process_param["Contingency"]) * ( 1 + Indirect_Cost + Owner_Cost + Project_Contingency)/1e6:.2f} million euros')
+    print(f'Cost of dehydration using PSA: {TAC_PSA/1e6:.2f} million euros per year')
+  
+
     Capex_tot_2007 = C_compressor + C_vacuum_pump + C_vacuum_cooling + C_cooler + C_membrane + C_expander # Total installed cost of the process in 2007 money
     Capex_tot_2014 = Capex_tot_2007 * Index_2014/Index_2007 #convert to 2014 money
     Capex_tot_2014 *= 0.7541  #convert to euros using average convertion rate in 2014 (0.7541 according to https://www.exchangerates.org.uk/USD-EUR-spot-exchange-rates-history-2014.html )
-    
+    Capex_tot_2007 += C_TEG + C_PSA # Add dehydration costs to total capex (already in 2014 euros)
+
     DEC = Capex_tot_2014 # (eur) Direct Equipment Cost 
     TDC = DEC * ( 1 + Process_param["Contingency"]) # Total direct cost with process contingency
     TPC = TDC * ( 1 + Indirect_Cost + Owner_Cost + Project_Contingency) # Total Plant Cost
@@ -176,8 +196,10 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     O_heater = 0 # Consider the heat integration from retentate as an equivalent water saving, as it is not a direct cost but a saving on the water cooling system.
     for Heater_duty in Process_specs["Heaters"]:
         O_heater += - (Heater_duty / (Cp_water * Water_dT) * Process_param["Operating_hours"] / 998 * Water_cost)
-    
-    Variable_Opex = (O_compressor + O_vacuum_pump + O_vacuum_cooling + O_cooler + O_membrane + O_expander + O_heater) #cost per year
+
+    O_TEG = TAC_TEG * 100/80 # OPEX of dehydration with TEG, assuming 20% of the total cost is equipment cost (from doi: 10.1016/j.cherd.2018.07.004)
+
+    Variable_Opex = (O_compressor + O_vacuum_pump + O_vacuum_cooling + O_cooler + O_membrane + O_expander + O_heater + O_TEG) #cost per year
 
     Annual_Maintenance = 0.025 * TPC # (eur/yr) ; 2.5% of total plant cost per year (CEMCAP)
     Maintenance_Labour = 0.4 * Annual_Maintenance # 40% of annual maintenance cost (CEMCAP)
@@ -206,7 +228,6 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     Variable_Opex += Cryo_Opex
     Total_Opex += Cryo_Opex
 
-
     ### Emissions due to cryognenic systems:
     Cryo_Energy = 0
     for Cryo in Process_specs["Cryogenics"]:
@@ -215,13 +236,6 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
         Cryo_Energy += Cryo[0] * 1e6 /3600  * Process_param["Operating_hours"] / Cryo_COP #from GJ/hr to kWh/yr including the coefficient of performance
 
     Power_Consumption += Cryo_Energy
-
-
-    TAC_Dehydration = Process_specs["Dehydration"] * 1e-3 * Dehydration_Cost * Process_param["Operating_hours"] # ($2018/yr) cost of removing N tons of H2O from compression train at 30 bar per year.
-    TAC_Dehydration *= Index_2014/Index_2018 #convert to 2014 money
-
-    TAC_other = TAC_Dehydration
-
 
     '''-----------------------------------#
     #-------------- Penalty --------------#
@@ -257,7 +271,7 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
     '''------------------------'''
 
     ### Estimate cost of carbon capture process as a TAC
-    TAC_CC = TPC/Process_param["Lifetime"] + Total_Opex + TAC_other
+    TAC_CC = TPC/Process_param["Lifetime"] + Total_Opex
 
     ### Evaluation ###
     Evaluation = TAC_CC + Penalty
@@ -315,7 +329,8 @@ def Costing(Process_specs, Process_param, Comp_properties, Options): #process sp
         "Variable_Opex": Variable_Opex,  # Variable Operational Expenditure per year
         "Fixed_Opex": Fixed_Opex,  # Fixed Operational Expenditure per year
         "TAC_Cryo": TAC_Cryo,  # Total Annualised Cost of Cryogenic cooling
-        "TAC_Dehydration": TAC_Dehydration,
+        "TAC_TEG": TAC_TEG,
+        "TAC_PSA": TAC_PSA,
         "Direct_CO2_emission": Primary_emission,  # CO2 emissions from the process in tonnes per year
         "Indirect_CO2_emission": Secondary_Emission_CCS,  # CO2 emissions from electricity consumption in tonnes per year"
         "C_compressor": C_compressor,  # Capital cost of compressors

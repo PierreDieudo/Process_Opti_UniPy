@@ -83,12 +83,12 @@ Material_Database = {
         ),
         "Activation_Energy_Fresh": None,
     },
-    "Polaris": { #https://doi.org/10.1016/j.apenergy.2019.01.130
+    "Polaris": { #http://dx.doi.org/10.1016/j.memsci.2014.01.020
         "Activation_Energy_Aged": (
-            [0,1000],    # CO2
-            [6041.575, 211.435],   # N2
-            [6041.575, 211.435],    # O2
-            [0, 1000],    # H2O
+            [22.45*1e3,4665912],    # CO2
+            [41.145*1e3, 143677016],   # N2
+            [41.145*1e3, 707652325],    # O2
+            [22.45*1e3,4665912],    # H2O
         ),
         "Activation_Energy_Fresh": None,
     },
